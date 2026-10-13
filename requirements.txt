@@ -1,0 +1,31 @@
+# Ollama (Full Local LLM)
+ollama
+
+# Qdrant Vector Database
+qdrant-client
+langchain-qdrant
+
+# LangChain Core & Ollama Integration
+langchain
+langchain-community
+langchain-ollama
+langchain-text-splitters
+
+# Web Search
+duckduckgo-search
+
+# Terminal UI & Formatting
+rich
+
+# File Watcher (Obsidian Auto-Sync)
+watchdog
+
+# Level 5 Extensions (Web API, Voice, Vision, Mobile, Crypto, Browser)
+fastapi
+uvicorn
+edge-tts
+pypdf
+pillow
+qrcode
+cryptography
+playwright
