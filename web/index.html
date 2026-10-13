@@ -767,7 +767,7 @@
         const contentType = resp.headers.get("content-type") || "unknown content type";
         throw new Error(
           `Server mengirim respons non-JSON (HTTP ${resp.status}, ${contentType}). ` +
-          "Pastikan endpoint /api aktif pada deployment Vercel."
+          "Pastikan deployment terbaru yang berisi endpoint chat aktif di Vercel."
         );
       }
     }
@@ -777,7 +777,7 @@
 
       while (true) {
         try {
-          const resp = await fetch(`/api/chat/jobs/${encodeURIComponent(jobId)}`, {
+          const resp = await fetch(`/api/chat-job?id=${encodeURIComponent(jobId)}`, {
             cache: "no-store"
           });
 
@@ -879,7 +879,7 @@
       }
 
       try {
-        const resp = await fetch("/api/chat/jobs", {
+        const resp = await fetch("/api/chat-jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: text })
