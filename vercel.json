@@ -1,4 +1,5 @@
 {
+  "framework": null,
   "outputDirectory": "web",
   "functions": {
     "api/[...path].js": {
