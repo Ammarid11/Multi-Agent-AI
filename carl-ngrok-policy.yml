@@ -1,7 +1,0 @@
-on_http_request:
-  - actions:
-      - type: basic-auth
-        config:
-          credentials:
-            - "Ammar:@Cryforgames890411"
-          enforce: true

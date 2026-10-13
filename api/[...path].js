@@ -12,9 +12,18 @@ function getRequestBody(req) {
 
 module.exports = async function handler(req, res) {
   const configuredApiUrl = process.env.CARL_API_URL;
+  const username = process.env.NGROK_BASIC_AUTH_USERNAME;
+  const password = process.env.NGROK_BASIC_AUTH_PASSWORD;
 
   if (!configuredApiUrl) {
     res.status(500).json({ detail: "CARL_API_URL is not configured." });
+    return;
+  }
+
+  if (!username || !password) {
+    res.status(500).json({
+      detail: "NGROK_BASIC_AUTH_USERNAME and NGROK_BASIC_AUTH_PASSWORD must be configured.",
+    });
     return;
   }
 
@@ -39,6 +48,7 @@ module.exports = async function handler(req, res) {
 
   const headers = new Headers({
     "ngrok-skip-browser-warning": "1",
+    authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`,
   });
   if (req.headers["content-type"]) {
     headers.set("content-type", req.headers["content-type"]);
