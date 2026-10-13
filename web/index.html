@@ -753,6 +753,80 @@
       if (el) el.remove();
     }
 
+    const ACTIVE_CHAT_JOB_KEY = "carl-active-chat-job";
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function pollChatJob(jobId) {
+      let retryDelay = 1000;
+
+      while (true) {
+        try {
+          const resp = await fetch(`/api/chat/jobs/${encodeURIComponent(jobId)}`, {
+            cache: "no-store"
+          });
+          const data = await resp.json();
+
+          if ([429, 502, 503, 504].includes(resp.status)) {
+            await sleep(retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 15000);
+            continue;
+          }
+          if (!resp.ok) {
+            throw new Error(data.detail || "Tidak dapat memeriksa status tugas Carl.");
+          }
+
+          if (data.status === "completed") return data.reply || "Selesai.";
+          if (data.status === "failed") {
+            throw new Error(data.detail || "Tugas chat gagal diproses.");
+          }
+
+          retryDelay = 1000;
+          await sleep(1200);
+        } catch (err) {
+          if (err instanceof TypeError) {
+            await sleep(retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 15000);
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    async function resumePendingChatJob() {
+      let activeJob;
+      try {
+        activeJob = JSON.parse(localStorage.getItem(ACTIVE_CHAT_JOB_KEY) || "null");
+      } catch (err) {
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        return;
+      }
+      if (!activeJob || !activeJob.jobId) return;
+
+      sendBtn.disabled = true;
+      showTyping();
+      const stopBtn = document.getElementById("stop-btn");
+      if (stopBtn && activeJob.isTutoring) {
+        stopBtn.style.display = "inline-flex";
+        stopBtn.disabled = false;
+      }
+
+      try {
+        const reply = await pollChatJob(activeJob.jobId);
+        appendMessage("ai", reply);
+      } catch (err) {
+        appendMessage("ai", `❌ **Tugas chat:** ${err.message}`);
+      } finally {
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        hideTyping();
+        sendBtn.disabled = false;
+        if (stopBtn) stopBtn.style.display = "none";
+      }
+    }
+
     async function stopActiveSession() {
       const stopBtn = document.getElementById("stop-btn");
       if (stopBtn) {
@@ -792,29 +866,40 @@
       }
 
       try {
-        const resp = await fetch("/api/chat", {
+        const resp = await fetch("/api/chat/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: text })
         });
 
         const data = await resp.json();
-        hideTyping();
-
-        if (resp.ok) {
-          appendMessage("ai", data.reply || "Selesai.");
-        } else {
-          appendMessage("ai", `❌ **Error:** ${data.reply || data.detail || "Gagal menghubungi server"}`);
+        if (!resp.ok) {
+          throw new Error(data.reply || data.detail || "Gagal memulai tugas chat.");
         }
+        if (!data.job_id) throw new Error("Server tidak mengembalikan ID tugas chat.");
+
+        localStorage.setItem(ACTIVE_CHAT_JOB_KEY, JSON.stringify({
+          jobId: data.job_id,
+          isTutoring
+        }));
+        const reply = await pollChatJob(data.job_id);
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        hideTyping();
+        appendMessage("ai", reply);
       } catch (err) {
         hideTyping();
-        appendMessage("ai", `❌ **Koneksi Terputus:** Tidak dapat menghubungi Carl Server di localhost:8000.`);
-      } finally {
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        appendMessage("ai", `❌ **Koneksi/Proses terhenti:** ${err.message || "Tidak dapat menghubungi server Carl."}`);
         sendBtn.disabled = false;
+      } finally {
+        const activeJob = localStorage.getItem(ACTIVE_CHAT_JOB_KEY);
+        if (!activeJob) sendBtn.disabled = false;
         if (stopBtn) {
-          stopBtn.style.display = "none";
-          stopBtn.disabled = false;
-          stopBtn.innerText = "🛑 Stop Les";
+          if (!activeJob) {
+            stopBtn.style.display = "none";
+            stopBtn.disabled = false;
+            stopBtn.innerText = "🛑 Stop Les";
+          }
         }
         userInput.focus();
       }
@@ -1099,6 +1184,8 @@
         }
       }, { passive: false });
     }
+
+    resumePendingChatJob();
   </script>
 </body>
 </html>

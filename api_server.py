@@ -13,6 +13,10 @@ import glob
 import re
 import asyncio
 import logging
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -46,6 +50,11 @@ _team: Optional[AITeam] = None
 _router: Optional[AgentRouter] = None
 SYSTEM_UNAVAILABLE_MESSAGE = "Sistem belum siap."
 logger = logging.getLogger(__name__)
+_chat_job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="carl-chat")
+_chat_jobs: Dict[str, Dict[str, Any]] = {}
+_chat_jobs_lock = threading.Lock()
+_CHAT_JOB_TTL_SECONDS = 60 * 60
+_CHAT_JOB_LIMIT = 100
 
 
 def unavailable_response() -> JSONResponse:
@@ -195,6 +204,118 @@ async def handle_chat(req: ChatRequest) -> Dict[str, Any]:
             status_code=500,
             content={"reply": message, "status": "error", "detail": message},
         )
+
+
+def _run_chat_job(job_id: str, query: str, router: AgentRouter) -> None:
+    """Run a chat request independently of the browser/Vercel request lifetime."""
+    with _chat_jobs_lock:
+        job = _chat_jobs.get(job_id)
+        if job is None:
+            return
+        job["status"] = "running"
+        job["updated_at"] = time.time()
+
+    try:
+        reply = router.route_and_execute(query)
+    except Exception:
+        logger.exception("Background chat job %s failed.", job_id)
+        with _chat_jobs_lock:
+            job = _chat_jobs.get(job_id)
+            if job is not None:
+                job.update(
+                    status="failed",
+                    detail="Terjadi kesalahan internal saat memproses permintaan.",
+                    updated_at=time.time(),
+                )
+        return
+
+    with _chat_jobs_lock:
+        job = _chat_jobs.get(job_id)
+        if job is not None:
+            job.update(status="completed", reply=reply, updated_at=time.time())
+
+
+def _prune_chat_jobs(now: float) -> None:
+    expired = [
+        job_id
+        for job_id, job in _chat_jobs.items()
+        if job["status"] in {"completed", "failed"}
+        and now - job["updated_at"] > _CHAT_JOB_TTL_SECONDS
+    ]
+    for job_id in expired:
+        del _chat_jobs[job_id]
+
+    if len(_chat_jobs) < _CHAT_JOB_LIMIT:
+        return
+
+    finished_jobs = sorted(
+        (
+            (job["updated_at"], job_id)
+            for job_id, job in _chat_jobs.items()
+            if job["status"] in {"completed", "failed"}
+        )
+    )
+    while len(_chat_jobs) >= _CHAT_JOB_LIMIT and finished_jobs:
+        _, job_id = finished_jobs.pop(0)
+        del _chat_jobs[job_id]
+
+
+@app.post("/api/chat/jobs", status_code=202)
+async def start_chat_job(req: ChatRequest) -> Dict[str, str]:
+    """Start chat work on Carl and return immediately with a pollable job ID."""
+    global _router
+    query = req.query.strip() if req.query else ""
+    if not query:
+        raise HTTPException(status_code=400, detail="Query tidak boleh kosong.")
+
+    if _router is None:
+        raise HTTPException(status_code=503, detail=SYSTEM_UNAVAILABLE_MESSAGE)
+
+    job_id = uuid.uuid4().hex
+    now = time.time()
+    with _chat_jobs_lock:
+        _prune_chat_jobs(now)
+        if len(_chat_jobs) >= _CHAT_JOB_LIMIT:
+            raise HTTPException(
+                status_code=503,
+                detail="Antrean chat penuh. Tunggu tugas sebelumnya selesai.",
+            )
+        _chat_jobs[job_id] = {
+            "status": "queued",
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    try:
+        _chat_job_executor.submit(_run_chat_job, job_id, query, _router)
+    except RuntimeError as exc:
+        logger.exception("Unable to enqueue chat job %s.", job_id)
+        with _chat_jobs_lock:
+            _chat_jobs.pop(job_id, None)
+        raise HTTPException(
+            status_code=503,
+            detail="Server tidak dapat memulai tugas chat saat ini.",
+        ) from exc
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/api/chat/jobs/{job_id}")
+async def get_chat_job(job_id: str) -> Dict[str, Any]:
+    """Return the current state or result of a background chat job."""
+    with _chat_jobs_lock:
+        job = _chat_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Tugas chat tidak ditemukan atau sudah kedaluwarsa.",
+            )
+        result = {"job_id": job_id, "status": job["status"]}
+        if job["status"] == "completed":
+            result["reply"] = job["reply"]
+        elif job["status"] == "failed":
+            result["detail"] = job["detail"]
+        return result
 
 
 @app.post("/api/tutoring/stop")

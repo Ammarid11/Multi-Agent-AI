@@ -1,5 +1,7 @@
+import asyncio
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -13,6 +15,8 @@ from api_server import (
     _build_galaxy_data,
     app,
     handle_chat,
+    start_chat_job,
+    get_chat_job,
     unavailable_response,
 )
 
@@ -79,6 +83,91 @@ class TestApiErrorContract(unittest.IsolatedAsyncioTestCase):
             await handle_chat(request)
 
         self.assertEqual(raised.exception.status_code, 400)
+
+    async def test_background_chat_job_returns_id_and_can_be_polled(self):
+        class ImmediateExecutor:
+            @staticmethod
+            def submit(function, *args):
+                function(*args)
+
+        class SuccessfulRouter:
+            @staticmethod
+            def route_and_execute(query):
+                return f"reply: {query}"
+
+        with (
+            patch("api_server._router", SuccessfulRouter()),
+            patch("api_server._chat_job_executor", ImmediateExecutor()),
+        ):
+            started = await start_chat_job(ChatRequest(query="  hello  "))
+            result = await get_chat_job(started["job_id"])
+
+        self.assertEqual(started["status"], "queued")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["reply"], "reply: hello")
+
+    async def test_background_chat_job_continues_after_start_request_returns(self):
+        started_work = threading.Event()
+        finish_work = threading.Event()
+
+        class BlockingRouter:
+            @staticmethod
+            def route_and_execute(query):
+                started_work.set()
+                if not finish_work.wait(timeout=2):
+                    raise TimeoutError("test job was not released")
+                return "long task completed"
+
+        with patch("api_server._router", BlockingRouter()):
+            started = await start_chat_job(ChatRequest(query="long task"))
+            self.assertTrue(await asyncio.to_thread(started_work.wait, timeout=1))
+            self.assertIn(
+                (await get_chat_job(started["job_id"]))["status"],
+                {"queued", "running"},
+            )
+
+            finish_work.set()
+            for _ in range(100):
+                result = await get_chat_job(started["job_id"])
+                if result["status"] == "completed":
+                    break
+                await asyncio.sleep(0.01)
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["reply"], "long task completed")
+
+    async def test_background_chat_job_reports_failure_without_leaking_exception(self):
+        class ImmediateExecutor:
+            @staticmethod
+            def submit(function, *args):
+                function(*args)
+
+        class BrokenRouter:
+            @staticmethod
+            def route_and_execute(query):
+                raise RuntimeError("private backend detail")
+
+        with (
+            patch("api_server._router", BrokenRouter()),
+            patch("api_server._chat_job_executor", ImmediateExecutor()),
+        ):
+            started = await start_chat_job(ChatRequest(query="hello"))
+            result = await get_chat_job(started["job_id"])
+
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("private backend detail", result["detail"])
+
+    async def test_background_chat_job_rejects_empty_query(self):
+        with self.assertRaises(HTTPException) as raised:
+            await start_chat_job(ChatRequest(query="  "))
+
+        self.assertEqual(raised.exception.status_code, 400)
+
+    async def test_background_chat_job_returns_not_found_for_unknown_id(self):
+        with self.assertRaises(HTTPException) as raised:
+            await get_chat_job("missing-job-id")
+
+        self.assertEqual(raised.exception.status_code, 404)
 
     async def test_galaxy_builder_reads_only_eligible_files_and_keeps_wikilink_edges(self):
         with tempfile.TemporaryDirectory() as directory:
