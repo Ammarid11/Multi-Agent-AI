@@ -847,11 +847,20 @@
         stopBtn.innerText = "⏳ Menghentikan...";
       }
       try {
-        const resp = await fetch("/api/tutoring/stop", { method: "POST" });
+        const resp = await fetch("/api/chat-stop", { method: "POST" });
         const data = await readApiJson(resp);
-        console.log("🛑 Sinyal berhenti dikirim:", data);
+        if (!resp.ok) {
+          throw new Error(data.detail || "Server Carl menolak permintaan berhenti.");
+        }
+        appendMessage("ai", data.message || "🛑 Sinyal berhenti sudah dikirim ke sesi les Carl.");
       } catch (err) {
         console.error("Gagal kirim stop:", err);
+        appendMessage("ai", `❌ Tidak dapat menghentikan sesi les: ${err.message || "Koneksi ke server gagal."}`);
+      } finally {
+        if (stopBtn) {
+          stopBtn.disabled = false;
+          stopBtn.innerText = "🛑 Stop Les";
+        }
       }
     }
 

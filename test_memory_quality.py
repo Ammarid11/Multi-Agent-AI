@@ -79,6 +79,23 @@ class TestMemoryQuality(unittest.TestCase):
         self.assertIn("Semantic retrieval is unavailable", context)
         expand_query.assert_not_called()
 
+    def test_qdrant_fallback_reloads_lexical_chunks_instead_of_using_stale_cache(self):
+        memory = MemoryManager.__new__(MemoryManager)
+        memory.store = type("UnavailableStore", (), {"client": None})()
+        stale_chunk = _doc("old.md", "stale indexed content")
+        fresh_chunk = _doc("fresh.md", "current vault content")
+        memory.all_chunks = [stale_chunk]
+
+        with (
+            patch("memory.manager.os.path.exists", return_value=True),
+            patch("memory.manager.scan_vault_mtimes", return_value={"fresh.md": 1.0}),
+            patch("memory.manager.extract_all_chunks", return_value=[fresh_chunk]) as extract,
+        ):
+            memory.index_vault(silent=True)
+
+        extract.assert_called_once_with(["fresh.md"])
+        self.assertEqual(memory.all_chunks, [fresh_chunk])
+
     def test_evaluator_ranks_explicit_source_markers_only(self):
         class FakeMemory:
             all_chunks = [object()]

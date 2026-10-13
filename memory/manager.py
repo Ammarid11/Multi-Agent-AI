@@ -46,12 +46,12 @@ class MemoryManager:
         if not self.store.client:
             if not silent:
                 print("⚠️ [Memory Manager] Klien Qdrant tidak tersedia (kemungkinan folder terkunci oleh proses lain).")
-            self._load_chunks_if_needed()
+            self._load_chunks_if_needed(force=True)
             return
 
         collections = self._get_collection_names()
         if collections is None:
-            self._load_chunks_if_needed()
+            self._load_chunks_if_needed(force=True)
             return
 
         if config.COLLECTION_NAME in collections and self.store.vector_db is None:
@@ -59,7 +59,7 @@ class MemoryManager:
                 "Qdrant collection %s exists but could not be loaded; refusing to recreate it.",
                 config.COLLECTION_NAME,
             )
-            self._load_chunks_if_needed()
+            self._load_chunks_if_needed(force=True)
             return
 
         is_fresh = config.COLLECTION_NAME not in collections
@@ -72,8 +72,8 @@ class MemoryManager:
         current_files = scan_vault_mtimes(config.VAULT_PATH)
         self._sync_vault_chunks(current_files, is_fresh, silent)
 
-    def _load_chunks_if_needed(self) -> None:
-        if not self.all_chunks:
+    def _load_chunks_if_needed(self, force: bool = False) -> None:
+        if force or not self.all_chunks:
             current_files = scan_vault_mtimes(config.VAULT_PATH)
             self.all_chunks = extract_all_chunks(list(current_files.keys()))
 

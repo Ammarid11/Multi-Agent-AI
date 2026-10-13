@@ -6,12 +6,10 @@ mengonversi tabel HTML ke tabel Markdown resmi, dan mengarsipkan halaman web
 menjadi catatan kaya wawasan di 03-Resources/Web/ di Obsidian Vault.
 """
 
-import os
 import re
 import urllib.request
-import urllib.parse
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 from bs4 import BeautifulSoup, Tag
 import config
 from tools.tool_web_search import web_search_structured
@@ -183,10 +181,12 @@ def run_browser_command(target: str) -> str:
     # Jika bukan URL langsung, cari via DuckDuckGo
     url = target
     if not target.startswith("http://") and not target.startswith("https://") and "." not in target.split()[0]:
-        search_res = web_search_structured(target, max_results=1)
-        if not search_res:
+        _, search_results = web_search_structured(target, deep_read=False)
+        if not search_results:
             return f"❌ Tidak dapat menemukan halaman web untuk '{target}'"
-        url = search_res[0].get("link") or search_res[0].get("url") or target
+        url = search_results[0].get("url", "")
+        if not url:
+            return f"❌ Hasil pencarian untuk '{target}' tidak memiliki URL yang valid."
 
     res = archive_web_page_to_vault(url)
     if not res["success"]:
@@ -202,4 +202,3 @@ def run_browser_command(target: str) -> str:
         f"{res['preview']}\n\n"
         f"📌 *Tabel data & teks utuh kini tersimpan rapi dan dapat ditautkan via `[[{res['filename'].replace('.md', '')}]]`.*"
     )
-

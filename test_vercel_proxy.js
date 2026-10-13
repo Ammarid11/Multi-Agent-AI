@@ -3,6 +3,7 @@ const { afterEach, test } = require("node:test");
 
 const chatJobHandler = require("./api/chat-job");
 const chatJobsHandler = require("./api/chat-jobs");
+const chatStopHandler = require("./api/chat-stop");
 const catchAllHandler = require("./api/[...path]");
 
 const originalFetch = global.fetch;
@@ -129,6 +130,50 @@ test("chat job polling rejects missing or malformed IDs without proxying", async
     assert.equal(res.statusCode, 400);
     assert.deepEqual(res.body, { detail: "A valid chat job ID is required." });
   }
+  assert.equal(fetchCalled, false);
+});
+
+test("stop tutoring uses a single-segment Vercel route and forwards to Carl", async () => {
+  configureProxy();
+  let forwardedUrl;
+  let forwardedOptions;
+  global.fetch = async (url, options) => {
+    forwardedUrl = url;
+    forwardedOptions = options;
+    return new Response('{"status":"ok","message":"Stop signal received."}', {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const res = createResponse();
+
+  await chatStopHandler(
+    { method: "POST", url: "/api/chat-stop", headers: {} },
+    res,
+  );
+
+  assert.equal(forwardedUrl.href, "https://carl.example/api/tutoring/stop");
+  assert.equal(forwardedOptions.method, "POST");
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.toString(), '{"status":"ok","message":"Stop signal received."}');
+});
+
+test("stop tutoring route rejects non-POST requests", async () => {
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error("Unexpected upstream request");
+  };
+  const res = createResponse();
+
+  await chatStopHandler(
+    { method: "GET", url: "/api/chat-stop", headers: {} },
+    res,
+  );
+
+  assert.equal(res.statusCode, 405);
+  assert.equal(res.headers.allow, "POST");
+  assert.equal(res.body.detail, "Method Not Allowed");
   assert.equal(fetchCalled, false);
 });
 
