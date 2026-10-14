@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 import tempfile
 import threading
@@ -179,6 +180,67 @@ class TestApiErrorContract(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["reply"], "long task completed")
+
+    async def test_serial_chat_jobs_report_queue_and_execution_durations(self):
+        first_started = threading.Event()
+        release_first = threading.Event()
+        previous_router = api_server._router
+        previous_executor = api_server._chat_job_executor
+        first_job_id = None
+        second_job_id = None
+
+        class ControlledRouter:
+            @staticmethod
+            def route_and_execute(query):
+                if query == "first":
+                    first_started.set()
+                    if not release_first.wait(timeout=3):
+                        raise TimeoutError("first test job was not released")
+                return f"reply: {query}"
+
+        try:
+            api_server._router = ControlledRouter()
+            api_server._chat_job_executor = ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="test-carl-chat",
+            )
+            first = await start_chat_job(ChatRequest(query="first"))
+            first_job_id = first["job_id"]
+            self.assertTrue(await asyncio.to_thread(first_started.wait, timeout=1))
+            second = await start_chat_job(ChatRequest(query="second"))
+            second_job_id = second["job_id"]
+
+            queued = await get_chat_job(second["job_id"])
+            self.assertEqual(queued["status"], "queued")
+            self.assertGreaterEqual(queued["queue_wait_ms"], 0)
+
+            await asyncio.sleep(0.05)
+            release_first.set()
+            results = {}
+            for _ in range(200):
+                results[first["job_id"]] = await get_chat_job(first["job_id"])
+                results[second["job_id"]] = await get_chat_job(second["job_id"])
+                if all(result["status"] == "completed" for result in results.values()):
+                    break
+                await asyncio.sleep(0.01)
+
+            first_result = results[first["job_id"]]
+            second_result = results[second["job_id"]]
+            self.assertEqual(first_result["status"], "completed")
+            self.assertEqual(second_result["status"], "completed")
+            self.assertEqual(second_result["reply"], "reply: second")
+            self.assertGreaterEqual(second_result["queue_wait_ms"], 10)
+            self.assertGreaterEqual(second_result["execution_ms"], 0)
+        finally:
+            release_first.set()
+            api_server._chat_job_executor.shutdown(wait=True)
+            api_server._chat_job_executor = previous_executor
+            api_server._router = previous_router
+            with api_server._chat_jobs_lock:
+                if first_job_id:
+                    api_server._chat_jobs.pop(first_job_id, None)
+                if second_job_id:
+                    api_server._chat_jobs.pop(second_job_id, None)
 
     async def test_background_chat_job_reports_failure_without_leaking_exception(self):
         class ImmediateExecutor:

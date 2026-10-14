@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from tools.tool_clean import _clean_markdown_in_path
 from tools.tool_clean import clean_target
 from tools.tool_create import create_file
 from tools.tool_delete import delete_file
+from tools.tool_read import read_file
 from tools.tool_web_search import _DuckDuckGoHtmlResultsParser, _format_date, _unwrap_duckduckgo_url
 from tools.vault_indexer import generate_or_get_vault_map
 
@@ -42,6 +44,115 @@ class TestGroundingAndRetrieval(unittest.TestCase):
             "Fakta [Sumber: project-notes.md].",
         )
         self.assertEqual(add_citation_verification_notice("Jawaban umum.", ""), "Jawaban umum.")
+
+    def test_citation_check_does_not_duplicate_existing_warning(self):
+        context = "[Sumber: project-notes.md]\nFakta yang tercatat."
+        warning = (
+            "⚠️ *Jawaban menggunakan konteks Vault tetapi belum menyertakan sitasi file. "
+            "Periksa sumber sebelum memperlakukan klaim sebagai fakta.*"
+        )
+        answer = f"Jawaban.\n\n{warning}"
+
+        self.assertEqual(add_citation_verification_notice(answer, context), answer)
+
+    def test_known_markdown_source_link_is_normalized_to_vault_citation(self):
+        context = (
+            "[Sumber: Materi Les Carl - Entity Relationship Diagram.md]\n"
+            "Catatan sumber ERD."
+        )
+        answer = (
+            "Poin utama ERD tercatat di "
+            "[Materi Les Carl - Entity Relationship Diagram.md]"
+            "(https://obsidian.md/Sumber:Materi Les Carl - Entity Relationship Diagram.md)."
+        )
+
+        result = add_citation_verification_notice(answer, context)
+
+        self.assertIn(
+            "[Sumber: Materi Les Carl - Entity Relationship Diagram.md]",
+            result,
+        )
+        self.assertNotIn("belum menyertakan sitasi", result)
+        self.assertNotIn("obsidian.md", result)
+
+    def test_file_manager_does_not_expose_raw_invalid_model_response(self):
+        raw_response = "Ini bukan JSON dan mungkin berisi konten privat."
+        response = SimpleNamespace(message=SimpleNamespace(content=raw_response))
+        with (
+            patch("agents.bot_file_manager.generate_or_get_vault_map", return_value=""),
+            patch("agents.bot_file_manager.ollama.chat", return_value=response),
+        ):
+            result = run_bot_file_manager("baca catatan uji", [])
+
+        self.assertIn("Tidak ada perubahan file yang dilakukan", result)
+        self.assertNotIn(raw_response, result)
+
+    def test_file_manager_does_not_default_incomplete_action_to_append(self):
+        response = SimpleNamespace(message=SimpleNamespace(
+            content='{"filename": "target.md", "content": "unrequested write"}'
+        ))
+        with (
+            patch("agents.bot_file_manager.generate_or_get_vault_map", return_value=""),
+            patch("agents.bot_file_manager.ollama.chat", return_value=response),
+            patch("agents.bot_file_manager.append_file") as append_file,
+            patch("agents.bot_file_manager.create_file") as create_file,
+        ):
+            result = run_bot_file_manager("pertanyaan informasi", [])
+
+        append_file.assert_not_called()
+        create_file.assert_not_called()
+        self.assertIn("instruksi file tidak lengkap", result)
+        self.assertIn("Tidak ada perubahan file yang dilakukan", result)
+
+    def test_file_manager_asks_before_reading_an_ambiguous_bare_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Path(directory)
+            first = vault / "01-Projects" / "README.md"
+            second = vault / "03-Resources" / "README.md"
+            first.parent.mkdir()
+            second.parent.mkdir()
+            first.write_text("# Project README", encoding="utf-8")
+            second.write_text("# Resources README", encoding="utf-8")
+
+            with (
+                patch("agents.bot_file_manager.config.VAULT_PATH", str(vault)),
+                patch("agents.bot_file_manager.generate_or_get_vault_map") as vault_map,
+                patch("agents.bot_file_manager.ollama.chat") as chat,
+                patch("agents.bot_file_manager.read_file") as read,
+            ):
+                result = run_bot_file_manager(
+                    "Tolong bacakan README.md dan minta saya memilih jika ada duplikat.",
+                    [],
+                )
+
+        self.assertIn("Saya belum membaca file mana pun", result)
+        self.assertIn("01-Projects/README.md", result)
+        self.assertIn("03-Resources/README.md", result)
+        vault_map.assert_not_called()
+        chat.assert_not_called()
+        read.assert_not_called()
+
+    def test_read_file_refuses_ambiguous_basename_but_accepts_exact_vault_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Path(directory)
+            first = vault / "01-Projects" / "README.md"
+            second = vault / "03-Resources" / "README.md"
+            first.parent.mkdir()
+            second.parent.mkdir()
+            first.write_text("# Project README", encoding="utf-8")
+            second.write_text("# Resources README", encoding="utf-8")
+
+            with patch("tools.tool_read.config.VAULT_PATH", str(vault)):
+                ambiguous = read_file("README.md")
+                selected = read_file("03-Resources/README.md")
+                traversal = read_file("../README.md")
+
+        self.assertIn("Saya belum membaca file mana pun", ambiguous)
+        self.assertIn("01-Projects/README.md", ambiguous)
+        self.assertIn("03-Resources/README.md", ambiguous)
+        self.assertNotIn("# Project README", ambiguous)
+        self.assertEqual(selected, "📄 **Isi File 'README.md':**\n\n# Resources README")
+        self.assertIn("Path harus berada di dalam Vault", traversal)
 
     def test_vault_index_excludes_hidden_system_template_archive_and_trash_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -78,6 +189,39 @@ class TestGroundingAndRetrieval(unittest.TestCase):
 
         self.assertIn("Project.md", vault_map)
         self.assertNotIn("Old.md", vault_map)
+
+    def test_vault_map_cache_skips_rescan_and_invalidates_structure_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            vault = Path(directory)
+            notes = vault / "01-Projects"
+            notes.mkdir()
+            first_note = notes / "First.md"
+            first_note.write_text("# First", encoding="utf-8")
+
+            with patch("tools.vault_indexer.config.VAULT_PATH", str(vault)):
+                first_map = generate_or_get_vault_map()
+                master_index = vault / "07-Settings" / "Master_Index.md"
+                first_index_mtime = master_index.stat().st_mtime_ns
+
+                with patch("tools.vault_indexer.os.scandir", wraps=os.scandir) as scandir:
+                    cached_map = generate_or_get_vault_map()
+                scandir.assert_not_called()
+
+                self.assertEqual(first_map, cached_map)
+                self.assertEqual(master_index.stat().st_mtime_ns, first_index_mtime)
+
+                second_note = notes / "Second.md"
+                second_note.write_text("# Second", encoding="utf-8")
+                updated_map = generate_or_get_vault_map()
+                self.assertIn("Second.md", updated_map)
+
+                second_note.rename(notes / "Renamed.md")
+                first_note.unlink()
+                final_map = generate_or_get_vault_map()
+
+        self.assertIn("Renamed.md", final_map)
+        self.assertNotIn("First.md", final_map)
+        self.assertNotIn("Second.md", final_map)
 
     def test_user_profile_defaults_do_not_assert_unverified_projects_or_interests(self):
         with tempfile.TemporaryDirectory() as directory:

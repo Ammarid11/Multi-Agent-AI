@@ -1,8 +1,10 @@
 # memory/hybrid_search.py
 """Hybrid ranking with Reciprocal Rank Fusion and a lightweight lexical heuristic."""
+import math
 import os
 import re
-from typing import List, Set, Tuple, Dict, Optional
+from collections import Counter
+from typing import List, Tuple, Dict, Optional
 from langchain_core.documents import Document
 
 STOPWORDS = {
@@ -63,13 +65,21 @@ def get_ranked_keyword_results(
 
     query_tokens = _extract_keywords(query)
     query_lower = " ".join(query_tokens)
+    keyword_set = set(keywords)
+    document_frequency: Counter[str] = Counter()
+    tokenized_chunks = []
+    for chunk in all_chunks:
+        tokens = set(re.findall(r"\w+", chunk.page_content.casefold(), flags=re.UNICODE))
+        tokenized_chunks.append(tokens)
+        document_frequency.update(tokens.intersection(keyword_set))
     scored: List[Tuple[float, Document]] = []
 
-    for chunk in all_chunks:
-        text_tokens = set(
-            re.findall(r"\w+", chunk.page_content.casefold(), flags=re.UNICODE)
+    for chunk, text_tokens in zip(all_chunks, tokenized_chunks):
+        kw_matches = sum(
+            math.log((len(all_chunks) + 1) / (document_frequency[kw] + 1)) + 1
+            for kw in keywords
+            if kw in text_tokens
         )
-        kw_matches = sum(1 for kw in keywords if kw in text_tokens)
         if kw_matches == 0:
             continue
 

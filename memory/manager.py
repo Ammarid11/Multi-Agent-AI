@@ -1,7 +1,9 @@
 # memory/manager.py
 import os
+import re
 import warnings
 import logging
+import time
 from typing import List, Dict, Optional, Set, Tuple
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
@@ -17,15 +19,38 @@ from memory.vault_scanner import (
     save_mtimes
 )
 from memory.hybrid_search import (
+    STOPWORDS,
     combine_search_results,
     get_ranked_keyword_results,
     merge_ranked_results,
 )
 from memory.query_expander import expand_query
 from memory.graph_retriever import traverse_graph_links
+from observability import log_stage
 
 warnings.filterwarnings("ignore", category=UserWarning)
 logger = logging.getLogger(__name__)
+
+
+def _has_explicit_keyword_source_match(query: str, keyword_results: List[Document]) -> bool:
+    query_terms = {
+        term
+        for term in re.findall(r"\w+", query.casefold(), flags=re.UNICODE)
+        if len(term) > 2 and term not in STOPWORDS
+    }
+    if len(query_terms) < 2:
+        return False
+
+    for document in keyword_results[:3]:
+        source_stem = os.path.splitext(os.path.basename(str(document.metadata.get("source", ""))))[0]
+        source_terms = {
+            term
+            for term in re.findall(r"\w+", source_stem.casefold(), flags=re.UNICODE)
+            if len(term) > 2 and term not in STOPWORDS
+        }
+        if len(source_terms) >= 2 and source_terms.issubset(query_terms):
+            return True
+    return False
 
 
 class MemoryManager:
@@ -119,32 +144,79 @@ class MemoryManager:
         """
         Pencarian cerdas dan hemat komputasi:
         1. Pencarian awal langsung via Semantic Vector + Keyword RRF (Cepat - 0 ms overhead).
-        2. Lazy Query Expansion: HANYA panggil LLM expander jika hasil awal kurang dari 3 dokumen.
+        2. Adaptive Query Expansion: lewati ekspansi jika hasil keyword menemukan
+           catatan yang disebut eksplisit; pertahankan ekspansi saat hasil awal lemah.
         """
         if not query or not query.strip():
             return ""
 
+        total_started = time.perf_counter()
         if self.needs_sync:
             self.index_vault(silent=True)
             self.needs_sync = False
 
+        vector_started = time.perf_counter()
         vector_results, vector_search_failed = self._search_vectors(query, k)
+        log_stage(logger, "retrieval", "vector_search", vector_started)
+        keyword_started = time.perf_counter()
         keyword_results = get_ranked_keyword_results(self.all_chunks, query)
+        log_stage(
+            logger,
+            "retrieval",
+            "keyword_search",
+            keyword_started,
+            chunks=len(self.all_chunks),
+        )
 
-        if not vector_search_failed and len(vector_results) < 3 and len(keyword_results) < 2:
-            vector_results, vector_search_failed = self._expand_vector_search(
+        explicit_source_match = _has_explicit_keyword_source_match(query, keyword_results)
+        if (
+            not vector_search_failed
+            and not explicit_source_match
+            and len(vector_results) < 3
+            and len(keyword_results) < 2
+        ):
+            expansion_started = time.perf_counter()
+            vector_results = self._expand_vector_search(
                 query,
                 vector_results,
                 k,
             )
+            log_stage(logger, "retrieval", "query_expansion", expansion_started)
+        elif explicit_source_match:
+            logger.debug("Skipping query expansion because the query names a retrieved Vault note.")
 
         top_seed = vector_results[:3] + keyword_results[:2]
+        graph_started = time.perf_counter()
         graph_results = traverse_graph_links(top_seed, max_hops=1, max_linked_docs=3)
+        log_stage(
+            logger,
+            "retrieval",
+            "graph_retrieval",
+            graph_started,
+            seed_documents=len(top_seed),
+            linked_documents=len(graph_results),
+        )
+        formatting_started = time.perf_counter()
         context = combine_search_results(
             vector_results,
             keyword_results,
             graph_results=graph_results,
             max_total=8,
+        )
+        log_stage(
+            logger,
+            "retrieval",
+            "result_formatting",
+            formatting_started,
+            context_chars=len(context),
+        )
+        log_stage(
+            logger,
+            "retrieval",
+            "total",
+            total_started,
+            vector_results=len(vector_results),
+            keyword_results=len(keyword_results),
         )
         if vector_search_failed:
             warning = (
@@ -166,10 +238,9 @@ class MemoryManager:
         query: str,
         initial_results: List[Document],
         k: int,
-    ) -> Tuple[List[Document], bool]:
+    ) -> List[Document]:
         ranked_results = [initial_results]
         seen_queries = {query.casefold()}
-        failed = False
         for alternate_query in expand_query(query)[1:]:
             normalized_query = alternate_query.strip()
             if not normalized_query or normalized_query.casefold() in seen_queries:
@@ -179,5 +250,4 @@ class MemoryManager:
                 ranked_results.append(self.store.similarity_search(alternate_query, k=3))
             except Exception:
                 logger.exception("Expanded semantic retrieval failed.")
-                failed = True
-        return merge_ranked_results(ranked_results, max_total=k), failed
+        return merge_ranked_results(ranked_results, max_total=k)

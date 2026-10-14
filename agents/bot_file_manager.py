@@ -1,6 +1,7 @@
 # agents/bot_file_manager.py
 import os
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -9,9 +10,11 @@ import ollama
 import config
 from tools.tool_create import create_file
 from tools.tool_append import append_file
-from tools.tool_read import read_file
+from tools.tool_read import find_vault_file_candidates, read_file
 from tools.tool_delete import delete_file
 from tools.vault_indexer import generate_or_get_vault_map
+
+logger = logging.getLogger(__name__)
 
 _SAVE_PREVIOUS_RESPONSE_PATTERNS = (
     re.compile(
@@ -24,11 +27,33 @@ _SAVE_PREVIOUS_RESPONSE_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+_EXPLICIT_READ_PATTERN = re.compile(r"\b(?:baca(?:kan)?|read|tampilkan)\b", re.IGNORECASE)
+_BARE_MARKDOWN_NAME_PATTERN = re.compile(
+    r"(?<![\w./\\-])([A-Za-z0-9][A-Za-z0-9_.-]*\.md)\b",
+    re.IGNORECASE,
+)
 
 
 def is_contextual_save_request(prompt: str) -> bool:
     """Identify save requests that refer to the prior assistant response."""
     return any(pattern.search(prompt) for pattern in _SAVE_PREVIOUS_RESPONSE_PATTERNS)
+
+
+def _ambiguous_read_request(prompt: str) -> str | None:
+    """Require path selection when an explicit bare filename has duplicate matches."""
+    if not _EXPLICIT_READ_PATTERN.search(prompt):
+        return None
+
+    for match in _BARE_MARKDOWN_NAME_PATTERN.finditer(prompt):
+        filename = match.group(1)
+        candidates = find_vault_file_candidates(filename)
+        if len(candidates) > 1:
+            return (
+                f"⚠️ Ada beberapa file bernama sama dengan `{filename}`. "
+                "Saya belum membaca file mana pun. Pilih satu dengan mengirim path Vault lengkap:\n- "
+                + "\n- ".join(candidates)
+            )
+    return None
 
 
 def _topic_from_recent_turns(chat_history: List[Dict[str, str]], response: str) -> str:
@@ -201,6 +226,14 @@ def run_bot_file_manager(prompt: str, chat_history: List[Dict[str, str]]) -> str
         except OSError as e:
             return f"❌ Gagal menyimpan rangkuman sebelumnya: {e}"
 
+    try:
+        ambiguity = _ambiguous_read_request(prompt)
+    except (OSError, ValueError) as error:
+        logger.exception("Unable to resolve the requested Vault filename.")
+        return f"❌ Gagal memeriksa nama file di Vault: {error}"
+    if ambiguity:
+        return ambiguity
+
     today = datetime.now().strftime("%Y-%m-%d")
     now_str = datetime.now().strftime("%A, %d %B %Y %H:%M WIB")
     vault_map = generate_or_get_vault_map()
@@ -248,20 +281,45 @@ def run_bot_file_manager(prompt: str, chat_history: List[Dict[str, str]]) -> str
         raw = res.message.content
         data = _extract_json(raw)
         if not data:
-            return f"❌ Gagal memproses perintah file: model tidak mengembalikan JSON yang valid.\nRaw: {raw}"
+            logger.warning("File manager response did not match the expected action format.")
+            return (
+                "❌ Gagal memproses perintah file: model tidak menghasilkan instruksi "
+                "file yang valid. Tidak ada perubahan file yang dilakukan."
+            )
 
-        if data.get("action") == "delete":
+        action = data.get("action")
+        filename = data.get("filename")
+        content = data.get("content")
+        section = data.get("section")
+        if (
+            action not in {"create", "append", "read", "delete"}
+            or not isinstance(filename, str)
+            or not filename.strip()
+            or (action in {"create", "append"} and not isinstance(content, str))
+            or (section is not None and not isinstance(section, str))
+        ):
+            logger.warning("File manager returned an incomplete or unsupported action.")
+            return (
+                "❌ Gagal memproses perintah file: instruksi file tidak lengkap "
+                "atau tidak didukung. Tidak ada perubahan file yang dilakukan."
+            )
+
+        if action == "delete":
             return (
                 "⚠️ Penghapusan tidak dijalankan dari interpretasi model. "
                 "Pastikan target secara eksplisit, lalu gunakan `/delete path/di-vault.md`."
             )
 
         result = _dispatch_action(
-            action=data.get("action", "append"),
-            filename=data.get("filename", "03-Resources/Data Profil Orang Lain.md"),
-            content=data.get("content", prompt),
-            section=data.get("section")
+            action=action,
+            filename=filename,
+            content=content if isinstance(content, str) else "",
+            section=section,
         )
         return result
-    except Exception as e:
-        return f"❌ Gagal memproses perintah file: {str(e)}"
+    except Exception:
+        logger.exception("File manager operation failed.")
+        return (
+            "❌ Operasi file gagal atau hasilnya belum dapat diverifikasi. "
+            "Periksa target di Vault sebelum mencoba kembali."
+        )

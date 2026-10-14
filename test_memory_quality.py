@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 
 from memory.answer_evaluator import evaluate_answer_benchmark
 from memory.evaluator import evaluate_memory_accuracy, run_evaluation_command
-from memory.hybrid_search import merge_ranked_results
+from memory.hybrid_search import get_ranked_keyword_results, merge_ranked_results
 from memory.manager import MemoryManager
 
 
@@ -33,6 +33,27 @@ class TestMemoryQuality(unittest.TestCase):
             ],
         )
 
+    def test_rare_name_match_ranks_above_common_claim_terms(self):
+        target = _doc(
+            "Data Profil Orang Lain.md",
+            "Alvi disebut dalam profil.",
+        )
+        common_term_matches = [
+            _doc(
+                f"Umum {index}.md",
+                "Catatan ini membahas perempuan dalam konteks umum.",
+            )
+            for index in range(8)
+        ]
+
+        results = get_ranked_keyword_results(
+            [*common_term_matches, target],
+            "catatan mana yang menyebut Alvi adalah perempuan?",
+        )
+
+        self.assertEqual(results[0].metadata["source"], "Data Profil Orang Lain.md")
+        self.assertIn("Alvi", results[0].page_content)
+
     def test_query_expansion_results_reach_formatted_context(self):
         memory = MemoryManager.__new__(MemoryManager)
         memory.needs_sync = False
@@ -57,6 +78,94 @@ class TestMemoryQuality(unittest.TestCase):
 
         self.assertIn("Unique expanded retrieval content", context)
         self.assertIn("expanded-target.md", context)
+
+    def test_explicit_note_title_match_skips_query_expansion(self):
+        memory = MemoryManager.__new__(MemoryManager)
+        memory.needs_sync = False
+        memory.all_chunks = []
+        named_note = _doc(
+            "03-Resources/Pengetahuan tentang Ikan.md",
+            "Catatan tentang cara ikan mengambil oksigen.",
+        )
+        memory.store = type(
+            "FakeStore",
+            (),
+            {"similarity_search": staticmethod(lambda query, k: [])},
+        )()
+
+        with (
+            patch("memory.manager.expand_query") as expand_query,
+            patch("memory.manager.get_ranked_keyword_results", return_value=[named_note]),
+            patch("memory.manager.traverse_graph_links", return_value=[]),
+        ):
+            context = memory.search_context(
+                "Menurut catatan Pengetahuan tentang Ikan bagaimana ikan mengambil oksigen",
+                k=5,
+            )
+
+        self.assertIn("Pengetahuan tentang Ikan.md", context)
+        expand_query.assert_not_called()
+
+    def test_weak_initial_retrieval_keeps_query_expansion_fallback(self):
+        memory = MemoryManager.__new__(MemoryManager)
+        memory.needs_sync = False
+        memory.all_chunks = []
+        expanded_doc = _doc("expanded-target.md", "Recovered through query expansion")
+        memory.store = type(
+            "FakeStore",
+            (),
+            {
+                "similarity_search": staticmethod(
+                    lambda query, k: [] if query == "unclear project query" else [expanded_doc]
+                )
+            },
+        )()
+
+        with (
+            patch(
+                "memory.manager.expand_query",
+                return_value=["unclear project query", "alternate project phrasing"],
+            ) as expand_query,
+            patch("memory.manager.get_ranked_keyword_results", return_value=[]),
+            patch("memory.manager.traverse_graph_links", return_value=[]),
+        ):
+            context = memory.search_context("unclear project query", k=5)
+
+        self.assertIn("Recovered through query expansion", context)
+        expand_query.assert_called_once_with("unclear project query")
+
+    def test_expansion_failure_does_not_misreport_initial_vector_search_failure(self):
+        memory = MemoryManager.__new__(MemoryManager)
+        memory.needs_sync = False
+        memory.all_chunks = []
+        initial_doc = _doc("initial.md", "Initial semantic result")
+        call_count = 0
+
+        def similarity_search(query, k):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [initial_doc]
+            raise RuntimeError("alternate query failed")
+
+        memory.store = type(
+            "FakeStore",
+            (),
+            {"similarity_search": staticmethod(similarity_search)},
+        )()
+
+        with (
+            patch(
+                "memory.manager.expand_query",
+                return_value=["unclear project query", "alternate project phrasing"],
+            ),
+            patch("memory.manager.get_ranked_keyword_results", return_value=[]),
+            patch("memory.manager.traverse_graph_links", return_value=[]),
+        ):
+            context = memory.search_context("unclear project query", k=5)
+
+        self.assertIn("Initial semantic result", context)
+        self.assertNotIn("Semantic retrieval is unavailable", context)
 
     def test_vector_failure_is_explicit_and_does_not_run_query_expansion(self):
         memory = MemoryManager.__new__(MemoryManager)

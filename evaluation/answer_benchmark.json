@@ -71,6 +71,62 @@
       "expected_sources": ["Ringkasan Konsep Java.md"]
     },
     {
+      "id": "fish-gills-and-fins-paraphrase",
+      "query": "Di catatan ikan, insang berfungsi untuk apa dan sirip membantu apa saja?",
+      "answerable": true,
+      "category": "multi_part",
+      "required_facts": ["oksigen yang terlarut di dalam air", "berenang", "menjaga keseimbangan", "mengarahkan gerakan"],
+      "expected_sources": ["Pengetahuan tentang Ikan.md"]
+    },
+    {
+      "id": "fish-classification-multi-part",
+      "query": "Menurut catatan Pengetahuan tentang Ikan, ikan termasuk kelompok hewan apa, bernapas dengan apa, dan umumnya berdarah bagaimana?",
+      "answerable": true,
+      "category": "multi_part",
+      "required_facts": ["vertebrata", "insang", "berdarah dingin", "poikiloterm"],
+      "expected_sources": ["Pengetahuan tentang Ikan.md"]
+    },
+    {
+      "id": "fish-freshwater-examples",
+      "query": "Sebutkan dua contoh ikan air tawar yang ada di catatan.",
+      "answerable": true,
+      "category": "retrieval",
+      "required_facts": ["Gurame", "Nila"],
+      "expected_sources": ["Pengetahuan tentang Ikan.md"]
+    },
+    {
+      "id": "fish-unspecified-species-count",
+      "query": "Menurut catatan Pengetahuan tentang Ikan, ada berapa spesies ikan air tawar di dunia?",
+      "answerable": false,
+      "category": "abstention",
+      "required_facts": [],
+      "expected_sources": []
+    },
+    {
+      "id": "java-control-flow-multi-part",
+      "query": "Sebutkan contoh perulangan dan percabangan Java yang dicatat, serta kegunaan struktur kontrol tersebut.",
+      "answerable": true,
+      "category": "multi_part",
+      "required_facts": ["for", "while", "do-while", "if-else", "switch", "mengontrol aliran eksekusi program"],
+      "expected_sources": ["Ringkasan Konsep Java.md"]
+    },
+    {
+      "id": "java-data-types-multi-part",
+      "query": "Apa saja tipe data primitif Java yang disebut catatan, dan bagaimana catatan itu menjelaskan tipe data objek?",
+      "answerable": true,
+      "category": "multi_part",
+      "required_facts": ["integer", "floating point", "karakter", "boolean", "instance dari kelas"],
+      "expected_sources": ["Ringkasan Konsep Java.md"]
+    },
+    {
+      "id": "java-io-package-and-purpose",
+      "query": "Paket Java apa yang disebut untuk input-output dan apa yang dimungkinkannya?",
+      "answerable": true,
+      "category": "grounded_factuality",
+      "required_facts": ["java.io", "manipulasi input dan output", "akses langsung ke berbagai sumber"],
+      "expected_sources": ["Ringkasan Konsep Java.md"]
+    },
+    {
       "id": "fish-unspecified-age",
       "query": "Menurut catatan Pengetahuan tentang Ikan, berapa umur ikan bandeng?",
       "answerable": false,

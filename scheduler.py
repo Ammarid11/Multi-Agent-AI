@@ -7,6 +7,7 @@ Menjalankan siklus otomatisasi kognitif berkala:
 - Pukul 23:00 WIB: Auto-Backup berkala ke direktori Backups.
 """
 
+import json
 import os
 import sys
 import time
@@ -25,12 +26,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config import VAULT_PATH
+from config import DB_PATH, VAULT_PATH
 from tools.vault_temporal import generate_daily_briefing
 from tools.vault_backup import backup_vault, show_windows_toast
 
 _SCHEDULER_THREAD: Optional[threading.Thread] = None
 _RUNNING = False
+_BRIEFING_STATE_PATH = Path(DB_PATH) / ".scheduler_state.json"
+_SCHEDULER_STATE_LOCK = threading.Lock()
 
 
 def trigger_morning_briefing(user_name: str = "Pengguna") -> str:
@@ -48,6 +51,56 @@ def trigger_morning_briefing(user_name: str = "Pengguna") -> str:
         err = f"[Heartbeat Error] Gagal menjalankan morning briefing: {e}"
         print(err)
         return err
+
+
+def _load_last_briefing_date() -> Optional[str]:
+    """Read the date of the last successfully generated automatic briefing."""
+    try:
+        with _BRIEFING_STATE_PATH.open("r", encoding="utf-8") as state_file:
+            state = json.load(state_file)
+        date_value = state.get("last_morning_briefing_date")
+        return date_value if isinstance(date_value, str) else None
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError):
+        print(f"[Heartbeat Warning] Tidak dapat membaca status briefing: {_BRIEFING_STATE_PATH}")
+        return None
+
+
+def _save_last_briefing_date(date_value: str) -> None:
+    """Persist the daily guard atomically so restarting the server won't repeat it."""
+    _BRIEFING_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = _BRIEFING_STATE_PATH.with_suffix(".tmp")
+    try:
+        with temporary_path.open("w", encoding="utf-8") as state_file:
+            json.dump({"last_morning_briefing_date": date_value}, state_file)
+            state_file.flush()
+            os.fsync(state_file.fileno())
+        os.replace(temporary_path, _BRIEFING_STATE_PATH)
+    except OSError:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def run_morning_briefing_once(date_value: str) -> bool:
+    """Run the automatic morning briefing at most once per local calendar day."""
+    with _SCHEDULER_STATE_LOCK:
+        if _load_last_briefing_date() == date_value:
+            return False
+
+        result = trigger_morning_briefing()
+        if result.startswith("[Heartbeat Error]"):
+            return False
+
+        try:
+            _save_last_briefing_date(date_value)
+        except OSError as error:
+            print(f"[Heartbeat Error] Gagal menyimpan status briefing harian: {error}")
+            return False
+        return True
 
 
 def trigger_weekly_review() -> str:
@@ -130,7 +183,7 @@ def _scheduler_loop():
     """Loop denyut waktu background dengan presisi menit."""
     global _RUNNING
     _RUNNING = True
-    last_briefing_date = None
+    last_briefing_date = _load_last_briefing_date()
     last_review_week = None
     last_backup_date = None
 
@@ -146,7 +199,7 @@ def _scheduler_loop():
 
             # 1. Jadwal Pagi (Mulai 08:00 WIB hingga sebelum siang)
             if 8 <= current_hour < 12 and last_briefing_date != today_str:
-                trigger_morning_briefing()
+                run_morning_briefing_once(today_str)
                 last_briefing_date = today_str
 
             # 2. Jadwal Rekap Mingguan (Minggu 20:00 WIB)
@@ -197,4 +250,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nMenutup Heartbeat Daemon...")
         stop_background_scheduler()
-

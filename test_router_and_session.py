@@ -1,4 +1,6 @@
+from concurrent.futures import Future
 import json
+import threading
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,6 +44,80 @@ class TestRouter(unittest.TestCase):
     def test_fast_intent_phrase_is_case_insensitive(self):
         self.assertEqual(self.router._fast_intent_check("Tolong CARI DI WEB tentang cuaca"), "web")
 
+    def test_ordinary_information_question_skips_llm_intent_classifier(self):
+        with patch("agents.router.classify_intent") as classify:
+            result = self.router.route_and_execute("Apa ibu kota Jepang?")
+
+        self.assertEqual(result, "bot_writer")
+        classify.assert_not_called()
+
+    def test_question_about_named_vault_note_routes_to_writer(self):
+        prompt = "Di catatan Ringkasan Konsep Java, apa contoh-contoh yang disebutkan?"
+        with patch("agents.router.classify_intent") as classify:
+            result = self.router.route_and_execute(prompt)
+
+        self.assertEqual(result, "bot_writer")
+        classify.assert_not_called()
+
+    def test_section_summary_request_routes_to_source_aware_writer(self):
+        prompt = "Ringkas bagian Python dari Python Dasar tanpa menambahkan informasi dari luar."
+        with patch("agents.router.classify_intent") as classify:
+            result = self.router.route_and_execute(prompt)
+
+        self.assertEqual(result, "bot_writer")
+        classify.assert_not_called()
+
+    def test_file_classifier_result_without_explicit_action_routes_to_writer(self):
+        prompt = "Jelaskan contoh-contoh pemrograman Java yang tercatat."
+        with patch("agents.router.classify_intent", return_value="file") as classify:
+            result = self.router.route_and_execute(prompt)
+
+        self.assertEqual(result, "bot_writer")
+        classify.assert_called_once_with(prompt)
+
+    def test_explicit_file_read_can_still_route_to_file_manager(self):
+        prompt = "Baca file Ringkasan Konsep Java.md"
+        with patch("agents.router.classify_intent", return_value="file"):
+            result = self.router.route_and_execute(prompt)
+
+        self.assertEqual(result, "bot_file_manager")
+
+    def test_explicit_file_action_inside_note_phrase_routes_to_file_manager(self):
+        prompt = "Di catatan QA, tambahkan satu baris marker."
+        with patch("agents.router.classify_intent", return_value="file") as classify:
+            result = self.router.route_and_execute(prompt)
+
+        self.assertEqual(result, "bot_file_manager")
+        classify.assert_called_once_with(prompt)
+
+    def test_question_about_what_to_save_does_not_trigger_file_action(self):
+        prompt = "Di catatan QA, apa yang sebaiknya saya simpan?"
+        with patch("agents.router.classify_intent", return_value="file") as classify:
+            result = self.router.route_and_execute(prompt)
+
+        self.assertEqual(result, "bot_writer")
+        classify.assert_called_once_with(prompt)
+
+    def test_question_with_specialist_action_still_uses_llm_intent_classifier(self):
+        with patch("agents.router.classify_intent", return_value="canvas") as classify:
+            result = self.router.route_and_execute(
+                "Apakah kamu bisa membuat canvas dari ide ini?"
+            )
+
+        self.assertEqual(result, "bot_canvas")
+        classify.assert_called_once()
+
+    def test_explicit_web_question_still_uses_web_fast_route(self):
+        with patch.object(self.router.team, "bot_web", return_value="web result") as web:
+            with patch("agents.router.classify_intent") as classify:
+                result = self.router.route_and_execute(
+                    "Apa berita terbaru tentang gempa? Cari di internet."
+                )
+
+        self.assertEqual(result, "web result")
+        web.assert_called_once()
+        classify.assert_not_called()
+
     def test_deep_reasoning_detector_escalates_explicit_complex_requests(self):
         self.assertTrue(
             should_use_deep_reasoning(
@@ -81,6 +157,27 @@ class TestRouter(unittest.TestCase):
         self.assertEqual(reasoner.call_count, 1)
         self.assertEqual(writer.call_count, 2)
         self.assertEqual(after_response.call_count, 3)
+
+    def test_router_finishes_prior_session_summary_before_handling_prompt(self):
+        class TeamWithPreparation:
+            def __init__(self):
+                self.prepared = False
+
+            def prepare_for_prompt(self):
+                self.prepared = True
+
+            def bot_writer(self, prompt):
+                return "reply"
+
+            def record_untracked_response(self, prompt, reply):
+                return None
+
+        team = TeamWithPreparation()
+        router = AgentRouter(team)
+        with patch("agents.router.classify_intent", return_value="default"):
+            self.assertEqual(router.route_and_execute("question"), "reply")
+
+        self.assertTrue(team.prepared)
 
     def test_natural_language_cleanup_request_routes_without_slash_command(self):
         with patch("agents.router.classify_intent") as classify:
@@ -140,13 +237,6 @@ class TestRouter(unittest.TestCase):
                 patch("agents.load_initial_session_summaries", return_value=[]),
                 patch("agents.run_bot_synthesizer", return_value=summary),
                 patch("agents.router.classify_intent", return_value="sintesis"),
-                patch(
-                    "agents.manage_history",
-                    side_effect=lambda history, summaries, user_name="Pengguna": (
-                        history,
-                        summaries,
-                    ),
-                ),
                 patch("agents.update_profile_from_interaction"),
                 patch("agents.detect_and_register_rule"),
                 patch("agents.bot_file_manager.config.VAULT_PATH", directory),
@@ -321,6 +411,62 @@ class TestSessionMemory(unittest.TestCase):
         persisted = json.loads(self.history_file.read_text(encoding="utf-8"))
         self.assertEqual(persisted["summaries"][0]["summary"], "summary")
 
+    def test_summary_submission_uses_a_snapshot_and_persists_in_background(self):
+        history = self._history()
+        started = threading.Event()
+        release = threading.Event()
+
+        def delayed_summary(messages, user_name="Pengguna"):
+            started.set()
+            release.wait(timeout=2)
+            return "background summary"
+
+        with patch.object(session_memory, "summarize_and_persist_history", side_effect=delayed_summary):
+            future = session_memory.submit_history_summary(history)
+            history[0]["content"] = "mutated after submission"
+            self.assertTrue(started.wait(timeout=1))
+            self.assertFalse(future.done())
+            release.set()
+            self.assertEqual(future.result(timeout=2), "background summary")
+
+    def test_team_defers_summary_wait_until_before_the_next_prompt(self):
+        team = AITeam.__new__(AITeam)
+        team.user_name = "Ammar"
+        team.chat_history = self._history(count=6)
+        team.session_summaries = ["existing"]
+        future: Future[str] = Future()
+
+        with (
+            patch("agents.update_profile_from_interaction"),
+            patch("agents.detect_and_register_rule"),
+            patch("agents.submit_history_summary", return_value=future) as submit,
+        ):
+            team._after_response("next prompt", "next reply")
+
+            self.assertEqual(len(team.chat_history), session_memory.SUMMARIZE_THRESHOLD)
+            self.assertFalse(future.done())
+            submit.assert_called_once()
+
+            prepared = threading.Event()
+            prepare_thread = threading.Thread(
+                target=lambda: (team.prepare_for_prompt(), prepared.set())
+            )
+            prepare_thread.start()
+            waited_for_summary = prepared.wait(timeout=0.05)
+            future.set_result("new summary")
+            self.assertFalse(waited_for_summary)
+            self.assertTrue(prepared.wait(timeout=1))
+            prepare_thread.join(timeout=1)
+
+        self.assertEqual(
+            team.chat_history,
+            self._history(count=6)[-2:] + [
+                {"role": "user", "content": "next prompt"},
+                {"role": "assistant", "content": "next reply"},
+            ],
+        )
+        self.assertEqual(team.session_summaries, ["existing", "new summary"])
+
     def test_expired_summaries_are_not_loaded(self):
         self.history_file.write_text(
             json.dumps({
@@ -347,6 +493,31 @@ class TestSessionMemory(unittest.TestCase):
 
         self.assertTrue(team.chat_history)
         self.assertEqual(team.session_summaries, ["existing summary"])
+
+    def test_reset_waits_for_pending_summary_before_clearing_persisted_history(self):
+        team = AITeam.__new__(AITeam)
+        team.chat_history = self._history()
+        team.session_summaries = []
+        future: Future[str] = Future()
+        team._pending_history_summary = future
+        team._pending_summary_snapshot = [message.copy() for message in team.chat_history[:-4]]
+        clear_started = threading.Event()
+        reset_finished = threading.Event()
+
+        with patch("agents.clear_session_history", side_effect=clear_started.set):
+            reset_thread = threading.Thread(
+                target=lambda: (team.reset_session(), reset_finished.set())
+            )
+            reset_thread.start()
+            waited_for_summary = reset_finished.wait(timeout=0.05)
+            future.set_result("persisted summary")
+            self.assertFalse(waited_for_summary)
+            self.assertTrue(reset_finished.wait(timeout=1))
+            reset_thread.join(timeout=1)
+
+        self.assertTrue(clear_started.is_set())
+        self.assertEqual(team.chat_history, [])
+        self.assertEqual(team.session_summaries, [])
 
 
 class TestMemoryManagerSafety(unittest.TestCase):

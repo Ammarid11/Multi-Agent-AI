@@ -41,14 +41,25 @@ def _copy_benchmark_sources(dataset_path: Path, target_vault: Path) -> None:
         shutil.copy2(source_path, destination)
 
 
-def _evaluate(memory: MemoryManager, dataset_path: Path, isolated: bool) -> dict:
-    report = evaluate_answer_benchmark(
-        answer_fn=lambda query: run_bot_writer(
+def _evaluate(
+    memory: MemoryManager,
+    dataset_path: Path,
+    isolated: bool,
+    captured_answers: list[str] | None = None,
+) -> dict:
+    def answer_case(query: str) -> str:
+        answer = run_bot_writer(
             query,
             memory_manager=memory,
             chat_history=[],
             user_name="Pengguna",
-        ),
+        )
+        if captured_answers is not None:
+            captured_answers.append(answer)
+        return answer
+
+    report = evaluate_answer_benchmark(
+        answer_fn=answer_case,
         dataset_path=str(dataset_path),
     )
     report["run_configuration"] = {
@@ -58,6 +69,47 @@ def _evaluate(memory: MemoryManager, dataset_path: Path, isolated: bool) -> dict
         "index_mode": "isolated_benchmark_sources" if isolated else "configured_vault",
     }
     return report
+
+
+def _write_review_sheet(
+    output_path: Path,
+    cases: list[dict],
+    answers: list[str],
+    run_configuration: dict,
+) -> None:
+    """Write an explicit opt-in artifact for human review of generated answers."""
+    if len(cases) != len(answers):
+        raise ValueError(
+            f"Review sheet expected {len(cases)} answers, received {len(answers)}."
+        )
+    if output_path.exists():
+        raise FileExistsError(f"Review output already exists: {output_path}")
+
+    payload = {
+        "review_status": "pending",
+        "run_configuration": run_configuration,
+        "cases": [
+            {
+                "id": case["id"],
+                "category": case["category"],
+                "query": case["query"],
+                "answerable": case["answerable"],
+                "required_facts": case["required_facts"],
+                "expected_sources": case["expected_sources"],
+                "generated_answer": answer,
+                "human_review": {
+                    "decision": None,
+                    "notes": "",
+                },
+            }
+            for case, answer in zip(cases, answers)
+        ],
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def main() -> int:
@@ -72,6 +124,14 @@ def main() -> int:
         "--isolated-vault",
         action="store_true",
         help="Index only the dataset's source_notes in a temporary Vault and Qdrant DB.",
+    )
+    parser.add_argument(
+        "--review-output",
+        type=Path,
+        help=(
+            "Optional JSON file containing generated answers and blank fields for "
+            "human review. The file may contain sensitive Vault-derived content."
+        ),
     )
     args = parser.parse_args()
 
@@ -102,6 +162,14 @@ def main() -> int:
         }, ensure_ascii=False, indent=2))
         return 0
 
+    if args.review_output and args.review_output.exists():
+        print(json.dumps({
+            "status": "error",
+            "message": f"Review output already exists: {args.review_output}",
+        }, ensure_ascii=False, indent=2))
+        return 2
+
+    captured_answers: list[str] | None = [] if args.review_output else None
     if args.isolated_vault:
         original_vault_path = config.VAULT_PATH
         original_db_path = config.DB_PATH
@@ -123,7 +191,12 @@ def main() -> int:
             try:
                 memory = MemoryManager()
                 memory.index_vault(silent=True)
-                report = _evaluate(memory, args.dataset, isolated=True)
+                report = _evaluate(
+                    memory,
+                    args.dataset,
+                    isolated=True,
+                    captured_answers=captured_answers,
+                )
             finally:
                 try:
                     if memory and memory.store.client:
@@ -134,7 +207,29 @@ def main() -> int:
     else:
         memory = MemoryManager()
         memory.index_vault(silent=True)
-        report = _evaluate(memory, args.dataset, isolated=False)
+        report = _evaluate(
+            memory,
+            args.dataset,
+            isolated=False,
+            captured_answers=captured_answers,
+        )
+
+    if args.review_output and captured_answers is not None:
+        try:
+            _write_review_sheet(
+                args.review_output,
+                cases,
+                captured_answers,
+                report["run_configuration"],
+            )
+        except (OSError, ValueError) as exc:
+            print(json.dumps({
+                "status": "error",
+                "message": str(exc),
+            }, ensure_ascii=False, indent=2))
+            return 2
+        report["human_review_output"] = str(args.review_output)
+        report["human_review_status"] = "pending"
 
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["status"] in {"success", "warning"} else 1

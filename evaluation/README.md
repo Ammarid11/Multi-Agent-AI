@@ -93,7 +93,7 @@ intentionally selected datasets.
 
 ## Building a meaningful test set
 
-The checked-in dataset is a reviewed 10-case pilot, not a representative
+The checked-in dataset is a reviewed 17-case pilot, not a representative
 accuracy benchmark. Do not add invented facts or private Vault content that has
 not been approved and reviewed. Before treating a score as an accuracy estimate:
 
@@ -119,3 +119,46 @@ pilot covers two general-topic Vault notes and evaluates source-grounded
 retrieval, factual response, and abstention; it does not evaluate reasoning,
 tool execution, or overall model intelligence. The first reviewed pilot report
 is saved in `reports/pilot-2026-10-14.json`.
+
+## Full QA case runner
+
+`run_qa_benchmark.py` reads the QA cases in
+`Catatan penting/benchmark-pertanyaan-akurasi-carl-ai.md`, including areas A–G
+and sections 7.1–7.8. It is a separate runner from `evaluate_answers.py`:
+
+```powershell
+python run_qa_benchmark.py
+python run_qa_benchmark.py --scaffold evaluation/qa_scenarios.json
+```
+
+The scaffold is intentionally **not ready to run**. Review each case's expected
+behavior, replace prompt placeholders, add synthetic `fixture_notes` when a
+case needs Vault content, and add explicit per-turn checks. Set its `status` to
+`ready` only after that review. Deterministic checks can inspect required or
+forbidden phrases, citations, abstention markers, regular expressions, response
+length, fixture file contents, expected changed paths, and selected intents.
+Use `manual_review` checks for semantic expectations; they remain
+`NEEDS_REVIEW`, not automatic passes.
+
+Inspect a manifest without running Carl:
+
+```powershell
+python run_qa_benchmark.py --manifest evaluation/qa_scenarios.json
+```
+
+After review, authorize model inference explicitly:
+
+```powershell
+python run_qa_benchmark.py --manifest evaluation/qa_scenarios.json `
+  --run --confirm-local-model --output evaluation/reports/full-qa.json
+```
+
+Live chat cases use a temporary Vault and Qdrant database, and restore the
+project's configured paths after the run. Fixture changes are discarded. The
+runner does not access a production Vault. Network cases are blocked unless
+`--allow-network` is explicitly passed. API/UI cases are reported as `BLOCKED`
+until a dedicated API/UI adapter is added; latency is recorded, but resource
+load checks are not currently collected. Literal assertions cannot establish
+semantic correctness, source support, or overall intelligence; review those
+results manually. Do not include private Vault data in manifests unless the
+local environment is approved for it.

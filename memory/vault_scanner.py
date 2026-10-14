@@ -20,17 +20,25 @@ EXCLUDED_VAULT_DIRS = {
 
 def is_indexable_note(path: str, vault_path: str) -> bool:
     """Exclude hidden/system/template/archive folders from retrieval indexing."""
+    if os.path.basename(path).startswith((".", "_")):
+        return False
+    return is_indexable_directory(os.path.dirname(path), vault_path)
+
+
+def is_indexable_directory(path: str, vault_path: str) -> bool:
+    """Check whether a directory is part of the indexable Vault tree."""
     try:
-        relative_parts = os.path.relpath(path, vault_path).replace("\\", "/").split("/")
+        relative = os.path.relpath(path, vault_path).replace("\\", "/")
     except ValueError:
         return False
+    if relative == ".":
+        return True
+    relative_parts = relative.split("/")
     if not relative_parts or relative_parts[0] == "..":
-        return False
-    if os.path.basename(path).startswith((".", "_")):
         return False
     return not any(
         part.startswith((".", "_")) or part.casefold() in EXCLUDED_VAULT_DIRS
-        for part in relative_parts[:-1]
+        for part in relative_parts
     )
 
 

@@ -1,4 +1,6 @@
 # agents/__init__.py
+from concurrent.futures import Future
+import logging
 from typing import List, Dict
 from agents.bot_writer import is_summary_request, run_bot_writer
 from agents.bot_file_manager import run_bot_file_manager
@@ -10,9 +12,18 @@ from agents.bot_curator import run_bot_curator
 from agents.bot_web import run_bot_web
 from tools.tool_clean import clean_target
 from agents.router import AgentRouter
-from memory.session_memory import manage_history, get_session_context, load_initial_session_summaries, clear_session_history
+from memory.session_memory import (
+    KEEP_RECENT,
+    SUMMARIZE_THRESHOLD,
+    clear_session_history,
+    get_session_context,
+    load_initial_session_summaries,
+    submit_history_summary,
+)
 from memory.user_profile import get_user_profile_context, update_profile_from_interaction
 from memory.rules_engine import get_rules_prompt_context, detect_and_register_rule
+
+logger = logging.getLogger(__name__)
 
 
 class AITeam:
@@ -21,11 +32,56 @@ class AITeam:
         self.memory = memory_manager
         self.user_name = user_name
         self.chat_history: List[Dict[str, str]] = []
+        self._pending_history_summary: Future[str] | None = None
+        self._pending_summary_snapshot: List[Dict[str, str]] = []
         # Muat memori 48 jam terakhir dari disk jika tersedia
         self.session_summaries: List[str] = load_initial_session_summaries()
 
+    def _finish_pending_history_summary(self) -> None:
+        """Apply a completed summary before the next turn consumes session state."""
+        pending = getattr(self, "_pending_history_summary", None)
+        if pending is None:
+            return
+
+        snapshot = self._pending_summary_snapshot
+        try:
+            summary = pending.result()
+        except Exception:
+            logger.exception("Background session summary failed.")
+            summary = ""
+        finally:
+            self._pending_history_summary = None
+            self._pending_summary_snapshot = []
+
+        if (
+            not summary
+            or self.chat_history[:len(snapshot)] != snapshot
+        ):
+            return
+
+        self.session_summaries = (self.session_summaries + [summary])[-3:]
+        self.chat_history = self.chat_history[-KEEP_RECENT:]
+
+    def prepare_for_prompt(self) -> None:
+        """Wait for prior history compaction before a new prompt uses that history."""
+        self._finish_pending_history_summary()
+
+    def _manage_history_after_response(self) -> None:
+        self._finish_pending_history_summary()
+        if len(self.chat_history) < SUMMARIZE_THRESHOLD:
+            return
+
+        snapshot = self.chat_history[:-KEEP_RECENT]
+        print(f"\n📝 [Session Memory] Meringkas {len(snapshot)} pesan di background...")
+        self._pending_summary_snapshot = [message.copy() for message in snapshot]
+        self._pending_history_summary = submit_history_summary(
+            self._pending_summary_snapshot,
+            user_name=self.user_name,
+        )
+
     def reset_session(self) -> str:
         """Kosongkan memori percakapan aktif untuk memulai topik baru."""
+        self._finish_pending_history_summary()
         clear_session_history()
         self.chat_history = []
         self.session_summaries = []
@@ -49,9 +105,7 @@ class AITeam:
         detect_and_register_rule(prompt)
 
         # Rolling summary otomatis dengan nama user
-        self.chat_history, self.session_summaries = manage_history(
-            self.chat_history, self.session_summaries, user_name=self.user_name
-        )
+        self._manage_history_after_response()
 
     def record_untracked_response(self, prompt: str, reply: str) -> None:
         """Keep routed responses from handlers that do not manage conversational history."""
@@ -71,9 +125,7 @@ class AITeam:
             {'role': 'user', 'content': prompt},
             {'role': 'assistant', 'content': reply},
         ])
-        self.chat_history, self.session_summaries = manage_history(
-            self.chat_history, self.session_summaries, user_name=self.user_name
-        )
+        self._manage_history_after_response()
 
 
     def bot_writer(self, prompt: str) -> str:

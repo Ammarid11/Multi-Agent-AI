@@ -1,5 +1,7 @@
 # agents/router.py
 import re
+import logging
+import time
 from typing import Callable, List, Optional, Sequence, Tuple
 from tools import read_file, create_file, append_file, delete_file, relocate_content, clean_target, web_search
 from agents.bot_file_manager import is_contextual_save_request
@@ -7,6 +9,9 @@ from agents.bot_writer import is_named_note_summary_request
 from agents.bot_router_llm import classify_intent
 
 from memory.rules_engine import add_rule, delete_rule, format_rules_summary
+from observability import log_stage
+
+logger = logging.getLogger(__name__)
 
 HELP_MENU = r"""### 📖 Panduan Perintah (Slash Commands) Multi-Agent AI (Level 4 System)
 
@@ -82,6 +87,60 @@ _NATURAL_CLEAN_VERB = re.compile(
     r"\b(?:rapikan|rapihkan|rapihin|merapikan|merapihkan)\b",
     re.IGNORECASE,
 )
+_GENERAL_QUESTION_START = re.compile(
+    r"^(?:apa(?:kah)?|siapa|bagaimana|kenapa|mengapa|kapan|dimana|berapa|"
+    r"adakah|benarkah|di\s+(?:dalam\s+)?(?:catatan|vault)\b|"
+    r"menurut\s+(?:catatan|vault)\b)",
+    re.IGNORECASE,
+)
+_SPECIALIST_ACTION_CUE = re.compile(
+    r"\b(?:buat(?:kan)?|membuat|bikin|cari(?:kan)?|telusuri|analisis|analisa|"
+    r"bandingkan|rapikan|rapihkan|rapihin|bersihkan|simpan|catat|tambah(?:kan)?|"
+    r"perbarui|update|hapus|baca|"
+    r"rangkum|ringkas|tulis|jalankan|perbaiki|simulasikan|jadwalkan|hubungkan|"
+    r"pindah(?:kan)?|ubah|edit|ekspor|terjemahkan|kodekan)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_FILE_ACTION_START = re.compile(
+    r"^\s*(?:(?:tolong|bisa|boleh|mohon|coba|bantu)\s+)*"
+    r"(?:buat(?:kan)?|bikin|simpan|catat|tambah(?:kan)?|perbarui|update|"
+    r"hapus|delete|baca|bacakan|tampilkan|pindah(?:kan)?|ubah|edit)\b",
+    re.IGNORECASE,
+)
+_QUESTION_START = re.compile(
+    r"^\s*(?:apa(?:kah)?|siapa|bagaimana|kenapa|mengapa|kapan|dimana|berapa|"
+    r"adakah|benarkah)\b",
+    re.IGNORECASE,
+)
+_NOTE_FILE_ACTION = re.compile(
+    r"^\s*(?:di|dalam)\s+(?:catatan|vault)\b.*?"
+    r"\b(buat(?:kan)?|bikin|simpan|catat|tambah(?:kan)?|perbarui|update|"
+    r"hapus|delete|baca|bacakan|tampilkan|pindah(?:kan)?|ubah|edit)\b",
+    re.IGNORECASE,
+)
+_QUESTION_CUE = re.compile(
+    r"\b(?:apa(?:kah)?|siapa|bagaimana|kenapa|mengapa|berapa|perlukah|haruskah)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_general_question(text: str) -> bool:
+    """Keep ordinary information questions off the slower LLM intent-classifier path."""
+    normalized = text.strip()
+    return bool(
+        _GENERAL_QUESTION_START.match(normalized)
+        and not _SPECIALIST_ACTION_CUE.search(normalized)
+    )
+
+
+def _is_explicit_file_action(text: str) -> bool:
+    """Avoid file writes/reads for messages merely asking about Vault content."""
+    if _EXPLICIT_FILE_ACTION_START.match(text):
+        return True
+    action_match = _NOTE_FILE_ACTION.match(text)
+    if not action_match or _QUESTION_START.match(text):
+        return False
+    return not _QUESTION_CUE.search(text[:action_match.start(1)])
 
 
 def _contains_phrase(text: str, phrase: str) -> bool:
@@ -282,10 +341,24 @@ class AgentRouter:
             "default":     lambda: self.team.bot_writer(raw),
         }
         handler = intent_map.get(intent, intent_map["default"])
-        return handler()
+        handler_started = time.perf_counter()
+        try:
+            return handler()
+        finally:
+            log_stage(
+                logger,
+                "router",
+                "agent_execution",
+                handler_started,
+                intent=intent,
+            )
 
     def route_and_execute(self, user_prompt: str) -> str:
         """Pintu masuk routing eksekusi cerdas."""
+        total_started = time.perf_counter()
+        prepare_for_prompt = getattr(self.team, "prepare_for_prompt", None)
+        if callable(prepare_for_prompt):
+            prepare_for_prompt()
         p = user_prompt.strip().lower()
 
         # 1. Cek Slash Command
@@ -305,14 +378,20 @@ class AgentRouter:
                 if fast_intent:
                     print(f"\n⚡ [Fast Router] Pola terdeteksi instan: [{fast_intent}]")
                     reply = self._route_by_intent(fast_intent, user_prompt)
+                elif _is_general_question(user_prompt):
+                    print("\n⚡ [Fast Router] Pertanyaan informasi umum diarahkan langsung ke Carl.")
+                    reply = self._route_by_intent("default", user_prompt)
                 else:
                     # 3. Stage 2: Smart LLM Classifier (Cadangan untuk kalimat ambigu/bahasa gaul)
                     print("\n🔀 [Router] Menganalisis kalimat via LLM Classifier...")
                     intent = classify_intent(user_prompt)
+                    if intent == "file" and not _is_explicit_file_action(user_prompt):
+                        intent = "default"
                     print(f"   → Intent terdeteksi: [{intent}]")
                     reply = self._route_by_intent(intent, user_prompt)
 
         record_response = getattr(self.team, "record_untracked_response", None)
         if callable(record_response):
             record_response(user_prompt, reply)
+        log_stage(logger, "router", "total", total_started)
         return reply

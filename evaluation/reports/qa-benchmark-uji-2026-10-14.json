@@ -1,0 +1,441 @@
+{
+  "status": "completed",
+  "cases": [
+    {
+      "id": "A1",
+      "area": "A",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "A2",
+      "area": "A",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "A3",
+      "area": "A",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "A4",
+      "area": "A",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "B1",
+      "area": "B",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "B2",
+      "area": "B",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "B3",
+      "area": "B",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "C1",
+      "area": "C",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "C2",
+      "area": "C",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "C3",
+      "area": "C",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "C4",
+      "area": "C",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "D1",
+      "area": "D",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "D2",
+      "area": "D",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "D3",
+      "area": "D",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "D4",
+      "area": "D",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "E1",
+      "area": "E",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "E2",
+      "area": "E",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "E3",
+      "area": "E",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "E4",
+      "area": "E",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "F1",
+      "area": "F",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "F2",
+      "area": "F",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "F3",
+      "area": "F",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "F4",
+      "area": "F",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "F5",
+      "area": "F",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "F6",
+      "area": "F",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "F7",
+      "area": "F",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "G1",
+      "area": "G",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "G2",
+      "area": "G",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "G3",
+      "area": "G",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "R1",
+      "area": "7.1",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "R2",
+      "area": "7.1",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "R3",
+      "area": "7.1",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "R4",
+      "area": "7.1",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "R5",
+      "area": "7.1",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "R6",
+      "area": "7.1",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "L1",
+      "area": "7.2",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "L2",
+      "area": "7.2",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "L3",
+      "area": "7.2",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "L4",
+      "area": "7.2",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "L5",
+      "area": "7.2",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "L6",
+      "area": "7.2",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "M1",
+      "area": "7.3",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "M2",
+      "area": "7.3",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "M3",
+      "area": "7.3",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "M4",
+      "area": "7.3",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "M5",
+      "area": "7.3",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "S1",
+      "area": "7.4",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "S2",
+      "area": "7.4",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "S3",
+      "area": "7.4",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "S4",
+      "area": "7.4",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "T1",
+      "area": "7.5",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "T2",
+      "area": "7.5",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "T3",
+      "area": "7.5",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "T4",
+      "area": "7.5",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "T5",
+      "area": "7.5",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "T6",
+      "area": "7.5",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "T7",
+      "area": "7.5",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "FMT1",
+      "area": "7.6",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "FMT2",
+      "area": "7.6",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "FMT3",
+      "area": "7.6",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "FMT4",
+      "area": "7.6",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "FMT5",
+      "area": "7.6",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "API1",
+      "area": "7.7",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "API2",
+      "area": "7.7",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "API3",
+      "area": "7.7",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "API4",
+      "area": "7.7",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "API5",
+      "area": "7.7",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "PERF1",
+      "area": "7.8",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "PERF2",
+      "area": "7.8",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "PERF3",
+      "area": "7.8",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    },
+    {
+      "id": "PERF4",
+      "area": "7.8",
+      "status": "BLOCKED",
+      "reason": "Reviewed expected facts/behavior and explicit checks are not filled in."
+    }
+  ],
+  "summary": {
+    "total": 71,
+    "pass": 0,
+    "fail": 0,
+    "needs_review": 0,
+    "blocked": 71
+  },
+  "limitations": [
+    "No model was loaded because there were no runnable cases."
+  ]
+}

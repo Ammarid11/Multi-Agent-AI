@@ -42,7 +42,9 @@ from memory_indexer import MemoryManager
 from memory.vault_scanner import is_indexable_note
 from agents import AITeam, AgentRouter
 from agents.gemini_browser import request_stop_tutoring
+from agents.streaming import reset_stream_callback, set_stream_callback
 from scheduler import start_background_scheduler, stop_background_scheduler
+from observability import log_stage
 
 # Singleton global state
 _memory_manager: Optional[MemoryManager] = None
@@ -208,31 +210,86 @@ async def handle_chat(req: ChatRequest) -> Dict[str, Any]:
 
 def _run_chat_job(job_id: str, query: str, router: AgentRouter) -> None:
     """Run a chat request independently of the browser/Vercel request lifetime."""
+    started_monotonic = time.perf_counter()
     with _chat_jobs_lock:
         job = _chat_jobs.get(job_id)
         if job is None:
             return
         job["status"] = "running"
+        job["started_monotonic"] = started_monotonic
+        queue_wait_ms = round(
+            (started_monotonic - job["queued_monotonic"]) * 1000,
+            2,
+        )
+        job["queue_wait_ms"] = queue_wait_ms
         job["updated_at"] = time.time()
 
+    last_stream_update = 0.0
+
+    def publish_partial_reply(partial_reply: str) -> None:
+        nonlocal last_stream_update
+        now_monotonic = time.perf_counter()
+        with _chat_jobs_lock:
+            job = _chat_jobs.get(job_id)
+            if job is not None and job["status"] == "running":
+                stream_parts = job.setdefault("stream_parts", [])
+                stream_parts.append(partial_reply)
+                if now_monotonic - last_stream_update >= 0.04:
+                    last_stream_update = now_monotonic
+                    job["partial_reply"] = "".join(stream_parts)
+                    job["updated_at"] = time.time()
+
+    stream_token = set_stream_callback(publish_partial_reply)
     try:
         reply = router.route_and_execute(query)
     except Exception:
+        reset_stream_callback(stream_token)
         logger.exception("Background chat job %s failed.", job_id)
+        finished_monotonic = time.perf_counter()
         with _chat_jobs_lock:
             job = _chat_jobs.get(job_id)
             if job is not None:
                 job.update(
                     status="failed",
                     detail="Terjadi kesalahan internal saat memproses permintaan.",
+                    execution_ms=round(
+                        (finished_monotonic - started_monotonic) * 1000,
+                        2,
+                    ),
                     updated_at=time.time(),
                 )
+        log_stage(
+            logger,
+            "api",
+            "chat_job",
+            started_monotonic,
+            queue_wait_ms=queue_wait_ms,
+            status="failed",
+        )
         return
 
+    reset_stream_callback(stream_token)
+    finished_monotonic = time.perf_counter()
     with _chat_jobs_lock:
         job = _chat_jobs.get(job_id)
         if job is not None:
-            job.update(status="completed", reply=reply, updated_at=time.time())
+            job.update(
+                status="completed",
+                reply=reply,
+                execution_ms=round(
+                    (finished_monotonic - started_monotonic) * 1000,
+                    2,
+                ),
+                updated_at=time.time(),
+            )
+    log_stage(
+        logger,
+        "api",
+        "chat_job",
+        started_monotonic,
+        queue_wait_ms=queue_wait_ms,
+        status="completed",
+    )
 
 
 def _prune_chat_jobs(now: float) -> None:
@@ -285,6 +342,7 @@ async def start_chat_job(req: ChatRequest) -> Dict[str, str]:
             "status": "queued",
             "created_at": now,
             "updated_at": now,
+            "queued_monotonic": time.perf_counter(),
         }
 
     try:
@@ -312,6 +370,22 @@ async def get_chat_job(job_id: str) -> Dict[str, Any]:
                 detail="Tugas chat tidak ditemukan atau sudah kedaluwarsa.",
             )
         result = {"job_id": job_id, "status": job["status"]}
+        if job["status"] == "queued":
+            result["queue_wait_ms"] = round(
+                (time.perf_counter() - job["queued_monotonic"]) * 1000,
+                2,
+            )
+        elif job["status"] in {"running", "completed", "failed"}:
+            result["queue_wait_ms"] = job.get("queue_wait_ms", 0)
+            if job["status"] == "running":
+                result["execution_ms"] = round(
+                    (time.perf_counter() - job["started_monotonic"]) * 1000,
+                    2,
+                )
+            else:
+                result["execution_ms"] = job.get("execution_ms", 0)
+        if job["status"] == "running" and job.get("stream_parts"):
+            result["partial_reply"] = "".join(job["stream_parts"])
         if job["status"] == "completed":
             result["reply"] = job["reply"]
         elif job["status"] == "failed":

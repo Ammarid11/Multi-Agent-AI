@@ -208,6 +208,10 @@
       word-break: break-word;
     }
 
+    .bubble.partial-response {
+      white-space: pre-wrap;
+    }
+
     .message-row.user .bubble {
       background-color: var(--bg-bubble-user);
       color: #ffffff;
@@ -753,6 +757,24 @@
       if (el) el.remove();
     }
 
+    function updateTyping(rawContent, previousContent = "") {
+      const row = document.getElementById("typing-row");
+      if (!row) return;
+      const meta = row.querySelector(".bubble-meta");
+      const bubble = row.querySelector(".bubble");
+      if (meta) meta.innerText = "🧠 Carl sedang merespons...";
+      if (bubble) {
+        const isPartialResponse = bubble.classList.contains("partial-response");
+        bubble.className = "bubble partial-response";
+        if (isPartialResponse && rawContent.startsWith(previousContent)) {
+          bubble.append(document.createTextNode(rawContent.slice(previousContent.length)));
+        } else {
+          bubble.textContent = rawContent;
+        }
+      }
+      scrollToBottom();
+    }
+
     const ACTIVE_CHAT_JOB_KEY = "carl-active-chat-job";
 
     function sleep(ms) {
@@ -774,6 +796,9 @@
 
     async function pollChatJob(jobId) {
       let retryDelay = 1000;
+      let pollDelay = 100;
+      let lastStatus = null;
+      let lastPartialReply = "";
 
       while (true) {
         try {
@@ -791,13 +816,28 @@
             throw new Error(data.detail || "Tidak dapat memeriksa status tugas Carl.");
           }
 
+          if (
+            typeof data.partial_reply === "string" &&
+            data.partial_reply &&
+            data.partial_reply !== lastPartialReply
+          ) {
+            const previousPartialReply = lastPartialReply;
+            lastPartialReply = data.partial_reply;
+            updateTyping(lastPartialReply, previousPartialReply);
+          }
           if (data.status === "completed") return data.reply || "Selesai.";
           if (data.status === "failed") {
             throw new Error(data.detail || "Tugas chat gagal diproses.");
           }
 
+          if (data.status !== lastStatus) {
+            pollDelay = 100;
+            lastStatus = data.status;
+          } else {
+            pollDelay = Math.min(Math.ceil(pollDelay * 1.35), 150);
+          }
           retryDelay = 1000;
-          await sleep(1200);
+          await sleep(pollDelay);
         } catch (err) {
           if (err instanceof TypeError) {
             await sleep(retryDelay);

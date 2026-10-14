@@ -8,6 +8,7 @@ import os
 import json
 import time
 import logging
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Dict, Tuple
 import ollama
 import config
@@ -17,6 +18,7 @@ SUMMARIZE_THRESHOLD = 8   # Ringkas jika percakapan mencapai 8 giliran
 KEEP_RECENT = 4           # Pertahankan 4 pesan terbaru setelah diringkas
 MAX_AGE_SECONDS = 48 * 3600  # 48 Jam
 logger = logging.getLogger(__name__)
+_summary_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="carl-summary")
 
 
 def _load_persisted_summaries() -> List[str]:
@@ -139,6 +141,30 @@ def manage_history(
         session_summaries = session_summaries[-3:]
 
     return recent, session_summaries
+
+
+def summarize_and_persist_history(
+    messages: List[Dict],
+    user_name: str = "Pengguna",
+) -> str:
+    """Summarize and persist a history snapshot for background execution."""
+    summary = _summarize_batch(messages, user_name=user_name)
+    if not summary or not _save_persisted_summary(summary):
+        return ""
+    return summary
+
+
+def submit_history_summary(
+    messages: List[Dict],
+    user_name: str = "Pengguna",
+) -> Future[str]:
+    """Schedule a stable history snapshot for summarization."""
+    snapshot = [message.copy() for message in messages]
+    return _summary_executor.submit(
+        summarize_and_persist_history,
+        snapshot,
+        user_name,
+    )
 
 
 def get_session_context(session_summaries: List[str]) -> str:

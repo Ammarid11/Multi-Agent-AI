@@ -1,7 +1,7 @@
 # agents/bot_coder.py
 from typing import List, Dict
-import ollama
 import config
+from agents.streaming import chat_with_optional_stream
 from tools.tool_create_py import create_python_file
 
 coder_tools = [create_python_file]
@@ -23,7 +23,7 @@ def run_bot_coder(prompt: str, chat_history: List[Dict[str, str]]) -> str:
     messages.extend(chat_history[-4:] if chat_history else [])
     messages.append({'role': 'user', 'content': prompt})
 
-    res = ollama.chat(
+    res = chat_with_optional_stream(
         model=config.MODEL_CODER,
         messages=messages,
         options=config.OPTIONS_CODER,
