@@ -260,6 +260,7 @@ def _prune_chat_jobs(now: float) -> None:
         del _chat_jobs[job_id]
 
 
+@app.post("/api/chat-jobs", status_code=202)
 @app.post("/api/chat/jobs", status_code=202)
 async def start_chat_job(req: ChatRequest) -> Dict[str, str]:
     """Start chat work on Carl and return immediately with a pollable job ID."""
@@ -318,6 +319,13 @@ async def get_chat_job(job_id: str) -> Dict[str, Any]:
         return result
 
 
+@app.get("/api/chat-job")
+async def get_chat_job_compat(id: str) -> Dict[str, Any]:
+    """Support the single-segment polling URL used by the shared browser UI."""
+    return await get_chat_job(id)
+
+
+@app.post("/api/chat-stop")
 @app.post("/api/tutoring/stop")
 async def handle_stop_tutoring() -> Dict[str, Any]:
     """Endpoint langsung untuk menghentikan sesi les Carl & Gemini secara manual."""

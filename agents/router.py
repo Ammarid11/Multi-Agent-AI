@@ -22,7 +22,7 @@ HELP_MENU = r"""### 📖 Panduan Perintah (Slash Commands) Multi-Agent AI (Level
 | `/rule <aturan>` | **Level 4:** Ajari AI aturan operasional baru (SOP Learning) |
 | `/rules` | **Level 4:** Lihat seluruh aturan operasional SOP yang aktif |
 | `/web <pencarian>` | Cari Info & Riset Terkini dari Web / Internet |
-| `/think <analisa>` | Penalaran Kritis & Problem Solving (DeepSeek-R1) |
+| `/think <analisa>` | Penalaran Kritis & Problem Solving (DeepSeek-R1); chat biasa otomatis diarahkan ke sini bila permintaannya kompleks |
 | `/coder <soal>` | Spesialis Pemrograman & Skrip Python |
 | `/sintesis [topik]` | Hubungkan Ide & Knowledge Graph Catatan |
 | `/canvas <topik>` | **Level 5:** Visual Canvas & Mind Map Generator interaktif (.canvas) |
@@ -47,7 +47,7 @@ HELP_MENU = r"""### 📖 Panduan Perintah (Slash Commands) Multi-Agent AI (Level
 | `/move <asal> -> <tujuan>` | Pindahkan materi antar catatan |
 | `/clean [file/folder]` | Audit, perbaiki format & struktur folder (bisa juga diminta dengan bahasa biasa) |
 
-*Tips: Anda juga bisa langsung mengobrol santai tanpa perintah untuk bertanya pada Carl.*
+*Tips: Anda juga bisa langsung mengobrol tanpa perintah. Pertanyaan sederhana memakai jalur cepat; permintaan analisis, perbandingan, perencanaan, hitungan, atau masalah bersyarat memakai penalaran mendalam.*
 """
 
 FAST_INTENT_PATTERNS = (

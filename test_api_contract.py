@@ -17,11 +17,27 @@ from api_server import (
     handle_chat,
     start_chat_job,
     get_chat_job,
+    get_chat_job_compat,
+    handle_stop_tutoring,
     unavailable_response,
 )
 
 
 class TestApiErrorContract(unittest.IsolatedAsyncioTestCase):
+    async def test_local_server_registers_browser_compatible_job_and_stop_paths(self):
+        registered = {
+            (route.path, method)
+            for route in app.routes
+            for method in getattr(route, "methods", set())
+        }
+
+        self.assertIn(("/api/chat-jobs", "POST"), registered)
+        self.assertIn(("/api/chat-job", "GET"), registered)
+        self.assertIn(("/api/chat-stop", "POST"), registered)
+        self.assertIn(("/api/chat/jobs", "POST"), registered)
+        self.assertIn(("/api/chat/jobs/{job_id}", "GET"), registered)
+        self.assertIn(("/api/tutoring/stop", "POST"), registered)
+
     async def test_application_lifespan_starts_and_stops_with_external_services_mocked(self):
         memory = Mock()
         team = Mock()
@@ -105,6 +121,34 @@ class TestApiErrorContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(started["status"], "queued")
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["reply"], "reply: hello")
+
+    async def test_browser_single_segment_chat_job_routes_work_on_local_api(self):
+        class ImmediateExecutor:
+            @staticmethod
+            def submit(function, *args):
+                function(*args)
+
+        class SuccessfulRouter:
+            @staticmethod
+            def route_and_execute(query):
+                return f"reply: {query}"
+
+        with (
+            patch("api_server._router", SuccessfulRouter()),
+            patch("api_server._chat_job_executor", ImmediateExecutor()),
+        ):
+            started = await start_chat_job(ChatRequest(query="local browser"))
+            result = await get_chat_job_compat(started["job_id"])
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["reply"], "reply: local browser")
+
+    async def test_browser_chat_stop_alias_sends_tutoring_stop_signal(self):
+        with patch("api_server.request_stop_tutoring") as stop:
+            result = await handle_stop_tutoring()
+
+        stop.assert_called_once_with()
+        self.assertEqual(result["status"], "ok")
 
     async def test_background_chat_job_continues_after_start_request_returns(self):
         started_work = threading.Event()

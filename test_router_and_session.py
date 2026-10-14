@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agents.bot_router_llm import INTENT_LABELS, classify_intent
+from agents.bot_reasoner import should_use_deep_reasoning
 from agents.router import AgentRouter
 from agents import AITeam
 from memory import session_memory
@@ -40,6 +41,46 @@ class TestRouter(unittest.TestCase):
 
     def test_fast_intent_phrase_is_case_insensitive(self):
         self.assertEqual(self.router._fast_intent_check("Tolong CARI DI WEB tentang cuaca"), "web")
+
+    def test_deep_reasoning_detector_escalates_explicit_complex_requests(self):
+        self.assertTrue(
+            should_use_deep_reasoning(
+                "Bandingkan kedua strategi berdasarkan biaya, risiko, dan dampak."
+            )
+        )
+        self.assertTrue(
+            should_use_deep_reasoning(
+                "Jika anggaran dipotong, lalu biaya tetap naik, bagaimana dampaknya?"
+            )
+        )
+
+    def test_deep_reasoning_detector_keeps_simple_factual_questions_fast(self):
+        self.assertFalse(should_use_deep_reasoning("Apa ibu kota Indonesia?"))
+        self.assertFalse(should_use_deep_reasoning("Jelaskan istilah enkapsulasi."))
+
+    def test_default_writer_escalates_complex_questions_but_not_note_summaries(self):
+        team = AITeam.__new__(AITeam)
+        team.memory = object()
+        team.chat_history = []
+        team.user_name = "Ammar"
+        with (
+            patch.object(team, "_get_session_ctx", return_value="session"),
+            patch.object(team, "_after_response") as after_response,
+            patch("agents.run_bot_reasoner", return_value="Analisis singkat") as reasoner,
+            patch("agents.run_bot_writer", return_value="Jawaban cepat") as writer,
+        ):
+            complex_reply = team.bot_writer(
+                "Bandingkan opsi A dan B berdasarkan biaya dan risiko."
+            )
+            simple_reply = team.bot_writer("Apa ibu kota Indonesia?")
+            summary_reply = team.bot_writer("Rangkum langkah demi langkah catatan X.md")
+
+        self.assertEqual(complex_reply, "Analisis singkat")
+        self.assertEqual(simple_reply, "Jawaban cepat")
+        self.assertEqual(summary_reply, "Jawaban cepat")
+        self.assertEqual(reasoner.call_count, 1)
+        self.assertEqual(writer.call_count, 2)
+        self.assertEqual(after_response.call_count, 3)
 
     def test_natural_language_cleanup_request_routes_without_slash_command(self):
         with patch("agents.router.classify_intent") as classify:

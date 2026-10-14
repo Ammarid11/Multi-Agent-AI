@@ -1,14 +1,6 @@
 {
   "summaries": [
     {
-      "summary": "- **Definisi**: Pariwisata budaya adalah bentuk wisata yang berfokus pada pengalaman interaksi dengan aspek kebudayaan dan keunikan suatu daerah.\n- **Kontribusi pada Keanekaragaman**:\n  - Menjaga keberagaman budaya dan tradisi lokal.\n- **Tujuan utama**:\n  - Meningkatkan pemahaman budaya, bukan sekadar bersenang-senang.\n- **Masih Belum Pasti**:\n  - Cara efektif menjaga keberlanjutan pariwisata budaya.",
-      "timestamp": 1791901554.2947986
-    },
-    {
-      "summary": "- Pariwisata budaya adalah bentuk wisata yang berfokus pada interaksi dengan budaya lokal, bukan hanya objek wisata fisik.\n- Contoh: Festival tradisional, pemikiran filosofis, atau pertunjukan seni.",
-      "timestamp": 1791901927.2977808
-    },
-    {
       "summary": "- Topik: Pariwisata budaya\n- Pernyataan eksplisit pengguna: Tidak jelas\n- Keputusan/aksi: Membahas aplikasi pariwisata budaya dalam proyek strategi marketing 2026 atau proyek robotika AI\n- Hal yang masih belum pasti: Keputusan pengguna untuk diskusi spesifik",
       "timestamp": 1791931369.4227304
     },
@@ -19,6 +11,14 @@
     {
       "summary": "- Topik: Aljabar untuk sistem informasi\n- Pernyataan eksplisit pengguna: Les privat aljabar untuk sistem informasi\n- Keputusan/aksi: 10 putaran pembelajaran berhasil didistilasi\n- Hal yang masih belum pasti: Detail materi spesifik dan implementasinya dalam sistem informasi tidak lengkap",
       "timestamp": 1791934221.2163146
+    },
+    {
+      "summary": "- Mampu memahami konteks dan nuansa percakapan\n- Bisa membuat inferensi dan analisis yang logis\n- Memiliki pemahaman emosional dan intuisi\n- Bisa mengadaptasi respons berdasarkan situasi",
+      "timestamp": 1791935398.6000152
+    },
+    {
+      "summary": "- **Topik**: Les privat aljabar untuk sistem informasi\n- **Pernyataan Eksplisit Pengguna**: Menentukan apakah persamaan linier `2x + 3y = 6` dan `4x + 6y = 12` memiliki solusi\n- **Keputusan/Aksi**: Melakukan step-by-step reasoning\n- **Hal yang Masih Tidak Pasti**: Status solusi persamaan linier tersebut dan karakteristik pengguna Ammar (usia, bahasa utama, gaya komunikasi, platform)",
+      "timestamp": 1791935697.1868837
     }
   ]
 }

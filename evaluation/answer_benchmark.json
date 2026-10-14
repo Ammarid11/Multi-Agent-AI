@@ -1,4 +1,90 @@
 {
   "schema_version": 1,
-  "cases": []
+  "review_status": "approved",
+  "source_notes": [
+    "03-Resources/Pengetahuan tentang Ikan.md",
+    "03-Resources/Ringkasan Konsep Java.md"
+  ],
+  "cases": [
+    {
+      "id": "fish-breathing",
+      "query": "Menurut catatan Pengetahuan tentang Ikan, bagaimana ikan mengambil oksigen?",
+      "answerable": true,
+      "category": "grounded_factuality",
+      "required_facts": ["insang", "oksigen yang terlarut di dalam air"],
+      "expected_sources": ["Pengetahuan tentang Ikan.md"]
+    },
+    {
+      "id": "fish-temperature",
+      "query": "Bagaimana catatan Pengetahuan tentang Ikan mengklasifikasikan suhu tubuh ikan?",
+      "answerable": true,
+      "category": "grounded_factuality",
+      "required_facts": ["berdarah dingin", "poikiloterm"],
+      "expected_sources": ["Pengetahuan tentang Ikan.md"]
+    },
+    {
+      "id": "fish-brackish-example",
+      "query": "Apa contoh ikan payau yang disebutkan dalam catatan Pengetahuan tentang Ikan?",
+      "answerable": true,
+      "category": "retrieval",
+      "required_facts": ["Bandeng"],
+      "expected_sources": ["Pengetahuan tentang Ikan.md"]
+    },
+    {
+      "id": "fish-fin-functions",
+      "query": "Sebutkan fungsi sirip ikan menurut catatan Pengetahuan tentang Ikan.",
+      "answerable": true,
+      "category": "grounded_factuality",
+      "required_facts": ["berenang", "menjaga keseimbangan", "mengarahkan gerakan"],
+      "expected_sources": ["Pengetahuan tentang Ikan.md"]
+    },
+    {
+      "id": "java-platform-phrase",
+      "query": "Apa prinsip lintas sistem operasi yang dicatat dalam Ringkasan Konsep Java?",
+      "answerable": true,
+      "category": "retrieval",
+      "required_facts": ["write once, run anywhere"],
+      "expected_sources": ["Ringkasan Konsep Java.md"]
+    },
+    {
+      "id": "java-oop-concepts",
+      "query": "Konsep apa saja yang disebut sebagai dukungan pemrograman berorientasi objek di Ringkasan Konsep Java?",
+      "answerable": true,
+      "category": "grounded_factuality",
+      "required_facts": ["encapsulation", "inheritance", "polymorphism"],
+      "expected_sources": ["Ringkasan Konsep Java.md"]
+    },
+    {
+      "id": "java-collections",
+      "query": "Sebutkan koleksi Java yang dicontohkan dalam Ringkasan Konsep Java.",
+      "answerable": true,
+      "category": "retrieval",
+      "required_facts": ["ArrayList", "LinkedList", "HashMap", "HashSet"],
+      "expected_sources": ["Ringkasan Konsep Java.md"]
+    },
+    {
+      "id": "java-exception-handling",
+      "query": "Mekanisme apa yang disebut catatan Ringkasan Konsep Java untuk menangani kegagalan?",
+      "answerable": true,
+      "category": "grounded_factuality",
+      "required_facts": ["try-catch"],
+      "expected_sources": ["Ringkasan Konsep Java.md"]
+    },
+    {
+      "id": "fish-unspecified-age",
+      "query": "Menurut catatan Pengetahuan tentang Ikan, berapa umur ikan bandeng?",
+      "answerable": false,
+      "category": "abstention",
+      "required_facts": [],
+      "expected_sources": []
+    },
+    {
+      "id": "java-unspecified-version",
+      "query": "Menurut Ringkasan Konsep Java, versi Java berapa yang digunakan?",
+      "answerable": false,
+      "category": "abstention",
+      "required_facts": [],
+      "expected_sources": []
+    }
+  ]
 }

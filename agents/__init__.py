@@ -1,9 +1,10 @@
 # agents/__init__.py
 from typing import List, Dict
-from agents.bot_writer import run_bot_writer
+from agents.bot_writer import is_summary_request, run_bot_writer
 from agents.bot_file_manager import run_bot_file_manager
 from agents.bot_coder import run_bot_coder
 from agents.bot_reasoner import run_bot_reasoner
+from agents.bot_reasoner import should_use_deep_reasoning
 from agents.bot_synthesizer import run_bot_synthesizer
 from agents.bot_curator import run_bot_curator
 from agents.bot_web import run_bot_web
@@ -77,6 +78,10 @@ class AITeam:
 
     def bot_writer(self, prompt: str) -> str:
         """Carl: Asisten Second Brain utama."""
+        if not is_summary_request(prompt) and should_use_deep_reasoning(prompt):
+            print("\n⚡ [Router] Permintaan kompleks diarahkan ke penalaran mendalam.")
+            return self.bot_reasoner(prompt)
+
         reply = run_bot_writer(
             prompt, self.memory, self.chat_history,
             session_context=self._get_session_ctx(),

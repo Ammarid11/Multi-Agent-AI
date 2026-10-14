@@ -155,6 +155,7 @@ class TestMemoryQuality(unittest.TestCase):
                     "id": "answerable",
                     "query": "What is the documented result?",
                     "answerable": True,
+                    "category": "factuality",
                     "required_facts": ["Result is 42"],
                     "expected_sources": ["result.md"],
                 },
@@ -162,6 +163,7 @@ class TestMemoryQuality(unittest.TestCase):
                     "id": "unanswerable",
                     "query": "What is the private key?",
                     "answerable": False,
+                    "category": "abstention",
                     "required_facts": [],
                     "expected_sources": [],
                 },
@@ -169,7 +171,7 @@ class TestMemoryQuality(unittest.TestCase):
         }
         answers = {
             "What is the documented result?": "Result is 42. [Sumber: result.md]",
-            "What is the private key?": "Informasi itu tidak ditemukan di Vault.",
+            "What is the private key?": "Informasi itu tidak tersedia dalam catatan.",
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "benchmark.json"
@@ -182,6 +184,74 @@ class TestMemoryQuality(unittest.TestCase):
         self.assertEqual(report["fact_coverage"], 1.0)
         self.assertEqual(report["citation_rate"], 1.0)
         self.assertEqual(report["abstention_rate"], 1.0)
+        self.assertEqual(report["answer_accuracy_ci95"], [0.342, 1.0])
+        self.assertEqual(report["answerable_accuracy"], 1.0)
+        self.assertEqual(report["answerable_accuracy_ci95"], [0.207, 1.0])
+        self.assertEqual(report["answerable_fact_accuracy"], 1.0)
+        self.assertEqual(report["answerable_fact_accuracy_ci95"], [0.207, 1.0])
+        self.assertEqual(report["answerable_samples_tested"], 1)
+        self.assertEqual(report["unanswerable_samples_tested"], 1)
+        self.assertEqual(report["category_results"]["factuality"]["samples_tested"], 1)
+        self.assertEqual(report["category_results"]["abstention"]["passed"], 1)
+
+    def test_answer_benchmark_rejects_unsupported_schema_version(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "benchmark.json"
+            path.write_text(
+                json.dumps({"schema_version": 2, "cases": []}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "schema_version 1"):
+                evaluate_answer_benchmark(lambda _query: "", str(path))
+
+    def test_answer_benchmark_refuses_to_score_unreviewed_draft(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "draft.json"
+            path.write_text(
+                json.dumps({
+                    "schema_version": 1,
+                    "review_status": "needs_review",
+                    "cases": [],
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "not approved for scoring"):
+                evaluate_answer_benchmark(lambda _query: "", str(path))
+
+    def test_answer_benchmark_separates_fact_accuracy_from_citation_rate(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        benchmark = {
+            "schema_version": 1,
+            "cases": [{
+                "id": "uncited-answer",
+                "query": "What is the result?",
+                "answerable": True,
+                "category": "grounded_factuality",
+                "required_facts": ["Result is 42"],
+                "expected_sources": ["result.md"],
+            }],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "benchmark.json"
+            path.write_text(json.dumps(benchmark), encoding="utf-8")
+            report = evaluate_answer_benchmark(
+                lambda _query: "Result is 42.", str(path)
+            )
+
+        self.assertEqual(report["answerable_fact_accuracy"], 1.0)
+        self.assertEqual(report["answerable_accuracy"], 0.0)
+        self.assertEqual(report["citation_rate"], 0.0)
+        self.assertTrue(report["cases"][0]["facts_passed"])
 
 
 if __name__ == "__main__":

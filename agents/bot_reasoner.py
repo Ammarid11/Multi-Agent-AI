@@ -3,6 +3,7 @@
 Reasoner Agent — Penalaran kritis & problem solving mendalam via DeepSeek-R1.
 Struktur output: Problem → Root Cause → Solution → Action Items.
 """
+import re
 from typing import List, Dict
 import ollama
 import config
@@ -10,6 +11,38 @@ from agents.grounding import (
     VAULT_GROUNDING_POLICY,
     add_citation_verification_notice,
 )
+
+_DEEP_REASONING_CUES = re.compile(
+    r"\b(?:"
+    r"analisis|analisa|bandingkan|perbandingan|trade[\s-]?off|pro[\s-]?kontra|"
+    r"dampak|konsekuensi|sebab[\s-]?akibat|strategi|prioritaskan|prioritas|"
+    r"optimalkan|pemecahan masalah|pecahkan masalah|langkah demi langkah|"
+    r"logika|buktikan|evaluasi kritis|pilih yang terbaik|rencana|"
+    r"hitung|perhitungan|selesaikan persamaan"
+    r")\b",
+    re.IGNORECASE,
+)
+_CONDITIONAL_REASONING_CUES = re.compile(
+    r"\b(?:jika|apabila|andaikan|dengan syarat|berdasarkan)\b",
+    re.IGNORECASE,
+)
+_MULTI_PART_CUES = re.compile(
+    r"\b(?:dan|lalu|kemudian|sementara|dibandingkan|dengan|serta)\b",
+    re.IGNORECASE,
+)
+
+
+def should_use_deep_reasoning(prompt: str) -> bool:
+    """Escalate explicit analytical, comparative, planning, or calculation requests."""
+    normalized = prompt.strip()
+    if not normalized:
+        return False
+    if _DEEP_REASONING_CUES.search(normalized):
+        return True
+    return bool(
+        _CONDITIONAL_REASONING_CUES.search(normalized)
+        and _MULTI_PART_CUES.search(normalized)
+    )
 
 
 def run_bot_reasoner(
@@ -29,15 +62,18 @@ def run_bot_reasoner(
         f"Anda adalah pakar analisis dan pemecahan masalah kritis untuk {user_name}.\n"
         f"Lawan Bicara: Anda sedang berbicara LANGSUNG dengan {user_name}.\n"
         "Model: DeepSeek-R1 — unggul dalam reasoning bertahap.\n\n"
-        "═══ STRUKTUR REFLEKSI KOGNITIF (MULTI-STEP REASONING) ═══\n"
-        "Gunakan struktur penalaran bertahap ini:\n"
-        "1. **🔍 Identifikasi Masalah & Asumsi Kunci** — Bedah inti persoalan tanpa asumsi dangkal.\n"
-        "2. **🌱 Akar Persoalan & Analisis Celah (Blind Spots)** — Apa faktor penyebab terdalam? Apa risiko tersembunyi yang mungkin terlewat (Devil's Advocate)?\n"
-        "3. **💡 Solusi Strategis & Skenario Alternatif** — Opsi solusi terbaik vs opsi cadangan (Trade-off & perbandingan pro-kontra).\n"
-        "4. **⚖️ Evaluasi Risiko vs Imbalan** — Analisis efisiensi biaya/waktu dan potensi kegagalan.\n"
-        "5. **✅ Action Items & Rekomendasi Proaktif** — Langkah eksekusi prioritas (1-2 hari ke depan) beserta ide lanjutan.\n\n"
+        "═══ METODE ANALISIS ═══\n"
+        "Untuk menjawab, identifikasi tujuan dan batasan, pisahkan fakta dari asumsi, "
+        "uraikan faktor yang relevan, bandingkan alternatif bila memang ada, lalu "
+        "periksa bahwa kesimpulan menjawab semua bagian pertanyaan dan tidak "
+        "bertentangan dengan bukti. Sesuaikan kedalaman dengan kompleksitas tugas; "
+        "jangan memaksakan daftar panjang pada pertanyaan sederhana.\n"
+        "Sampaikan jawaban akhir yang ringkas dan alasan utama yang dapat diperiksa. "
+        "Jangan tampilkan monolog internal atau seluruh rantai pemikiran.\n\n"
         "═══ PRINSIP PENALARAN DEEPSEEK-R1 ═══\n"
         "- Berpikir kritis, objektif, dan teliti mengaitkan konsep lintas catatan.\n"
+        "- Jika data penting tidak ada, nyatakan asumsi atau minta klarifikasi; jangan mengisi kekosongan dengan tebakan.\n"
+        "- Untuk hitungan, tunjukkan rumus, nilai yang dipakai, dan hasil agar dapat diverifikasi.\n"
         f"- Sesuaikan rekomendasi secara personal untuk {user_name}.\n"
         f"- {VAULT_GROUNDING_POLICY}\n"
         "- Riwayat dan ringkasan sesi bukan bukti faktual; labeli sebagai informasi percakapan yang belum diverifikasi.\n"

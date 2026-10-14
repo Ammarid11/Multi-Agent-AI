@@ -767,7 +767,7 @@
         const contentType = resp.headers.get("content-type") || "unknown content type";
         throw new Error(
           `Server mengirim respons non-JSON (HTTP ${resp.status}, ${contentType}). ` +
-          "Pastikan deployment terbaru yang berisi endpoint chat aktif di Vercel."
+          "Periksa apakah server lokal atau deployment yang dibuka sudah menjalankan versi API yang sesuai."
         );
       }
     }

@@ -1,0 +1,60 @@
+{
+  "run_date": "2026-10-14",
+  "status": "success",
+  "metric_scope": "human_reviewed_answer_checklist",
+  "samples_tested": 10,
+  "answer_accuracy": 0.2,
+  "answer_accuracy_ci95": [0.057, 0.51],
+  "answerable_samples_tested": 8,
+  "answerable_accuracy": 0.0,
+  "answerable_accuracy_ci95": [0.0, 0.324],
+  "answerable_fact_accuracy": 1.0,
+  "answerable_fact_accuracy_ci95": [0.676, 1.0],
+  "unanswerable_samples_tested": 2,
+  "fact_coverage": 1.0,
+  "citation_rate": 0.0,
+  "abstention_rate": 1.0,
+  "category_results": {
+    "abstention": {
+      "samples_tested": 2,
+      "passed": 2,
+      "answer_accuracy": 1.0,
+      "answer_accuracy_ci95": [0.342, 1.0]
+    },
+    "grounded_factuality": {
+      "samples_tested": 5,
+      "passed": 0,
+      "answer_accuracy": 0.0,
+      "answer_accuracy_ci95": [0.0, 0.434]
+    },
+    "retrieval": {
+      "samples_tested": 3,
+      "passed": 0,
+      "answer_accuracy": 0.0,
+      "answer_accuracy_ci95": [0.0, 0.562]
+    }
+  },
+  "case_results": [
+    {"id": "fish-breathing", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "fish-temperature", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "fish-brackish-example", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "fish-fin-functions", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "java-platform-phrase", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "java-oop-concepts", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "java-collections", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "java-exception-handling", "facts_passed": true, "citation_present": false, "abstained": false},
+    {"id": "fish-unspecified-age", "facts_passed": null, "citation_present": null, "abstained": true},
+    {"id": "java-unspecified-version", "facts_passed": null, "citation_present": null, "abstained": true}
+  ],
+  "run_configuration": {
+    "writer_model_configured": "qwen2.5:7b",
+    "writer_options": {"temperature": 0.3},
+    "embedding_model_configured": "nomic-embed-text",
+    "index_mode": "isolated_benchmark_sources",
+    "source_notes": [
+      "03-Resources/Pengetahuan tentang Ikan.md",
+      "03-Resources/Ringkasan Konsep Java.md"
+    ]
+  },
+  "evaluation_note": "Pilot kecil dari 2 catatan dan 10 pertanyaan. Fakta diperiksa dengan checklist literal, bukan semantic judge; interval Wilson indikatif saja. Tidak mengukur reasoning, tool execution, general knowledge, atau kecerdasan universal."
+}
