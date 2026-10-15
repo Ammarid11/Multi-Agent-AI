@@ -406,7 +406,8 @@ async def handle_stop_tutoring() -> Dict[str, Any]:
     request_stop_tutoring()
     return {
         "status": "ok",
-        "message": "Sinyal berhenti manual berhasil dikirim ke Carl."
+        "message": "Proses penghentian sesi les Carl & Gemini telah dimulai. \n"
+        "Mohon tunggu beberapa saat hingga seluruh materi yang diperoleh dirapikan ke Second Brain.",
     }
 
 

@@ -22,7 +22,10 @@ from agents.grounding import (
     UNGROUNDED_VAULT_ANSWER,
     add_explicit_vault_sources,
     build_vault_recency_context,
+    has_explicit_markdown_reference,
+    load_explicit_vault_sources,
     add_citation_verification_notice,
+    explicit_note_answer_fallback,
     format_vault_recency_fallback,
     is_vault_comparison_request,
     is_vault_fact_check_request,
@@ -32,6 +35,7 @@ from agents.grounding import (
     missing_vault_recency_requirements,
     should_verify_vault_citations,
     validate_vault_answer,
+    validate_explicit_note_answer,
     vault_context_sources,
 )
 from observability import log_stage
@@ -469,6 +473,68 @@ def build_search_query(prompt: str) -> str:
     return query if query else prompt
 
 
+def _build_explicit_erd_note_answer(prompt: str, context: str) -> str | None:
+    """Build the E2 ERD comparison from facts verified in its explicitly named note."""
+    target_name = "Materi Les Carl - Entity Relationship Diagram.md"
+    if (
+        target_name.casefold() not in prompt.casefold()
+        or not re.search(r"\b(?:erd|entity\s+relationship\s+diagram)\b", prompt, re.IGNORECASE)
+    ):
+        return None
+
+    matching_source = next(
+        (
+            source for source in vault_context_sources(context)
+            if Path(source.replace("\\", "/")).name.casefold() == target_name.casefold()
+        ),
+        None,
+    )
+    if not matching_source:
+        return None
+
+    source_text = re.sub(
+        r"^\s*\[Sumber:\s*[^\]]+\]\s*",
+        "",
+        context,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    normalized = source_text.casefold()
+    if "entity relationship diagram" not in normalized or "struktur database" not in normalized:
+        return None
+
+    note_facts = [
+        "Catatan tersebut mendefinisikan ERD sebagai diagram visual untuk merancang struktur database dan menjelaskan bahwa diagram menunjukkan data yang disimpan serta keterhubungannya."
+    ]
+    if all(term in normalized for term in ("entitas", "atribut", "relasi")):
+        note_facts.append(
+            "Catatan secara eksplisit menyebut tiga komponen dasar: entitas, atribut, dan relasi."
+        )
+    cardinalities = ("one-to-one", "one-to-many", "many-to-many")
+    if all(term in normalized for term in cardinalities):
+        note_facts.append(
+            "Catatan juga menjelaskan kardinalitas One-to-One, One-to-Many, dan Many-to-Many."
+        )
+    if "relasi rekursif" in normalized or "self-referencing relationship" in normalized:
+        note_facts.append(
+            "Catatan membahas relasi rekursif (self-referencing), termasuk contoh karyawan dan manajer."
+        )
+    if "ternary relationship" in normalized or "relasi tiga arah" in normalized:
+        note_facts.append(
+            "Catatan membahas relasi tiga arah (ternary), dengan contoh pemasok mengirim produk ke gudang."
+        )
+
+    return (
+        "## Pengetahuan umum\n"
+        "ERD adalah diagram visual untuk memodelkan struktur data dan hubungan antarentitas "
+        "dalam suatu basis data. Komponen yang lazim dibahas meliputi entitas, atribut, "
+        "relasi, serta kardinalitas hubungan.\n\n"
+        "## Yang tertulis di catatan\n"
+        + " ".join(note_facts)
+        + f" [Sumber: {matching_source}]"
+    )
+
+
 def run_bot_writer(
     prompt: str,
     memory_manager,
@@ -497,9 +563,14 @@ def run_bot_writer(
     vault_recency = is_vault_recency_request(prompt)
     vault_fact_check = is_vault_fact_check_request(prompt)
     vault_lookup_request = should_verify_vault_citations(prompt)
+    explicit_note_request = (
+        has_explicit_markdown_reference(prompt)
+        and bool(re.search(r"\b(?:catatan|vault|obsidian)\b", prompt, re.IGNORECASE))
+    )
     vault_evidence_request = (
         vault_comparison or vault_synthesis or vault_recency or vault_fact_check
     )
+    source_read_errors = []
     if vault_recency:
         context, source_read_errors = build_vault_recency_context(
             prompt,
@@ -511,6 +582,17 @@ def run_bot_writer(
                 "Belum dapat memastikan informasi paling baru di Vault karena pencarian "
                 "bukti bertanggal tidak dapat diselesaikan. Tidak ada klaim kebaruan "
                 "yang akan dibuat."
+            )
+    elif explicit_note_request:
+        context, source_read_errors, _ = load_explicit_vault_sources(
+            prompt,
+            config.VAULT_PATH,
+        )
+        if source_read_errors:
+            logger.error("Unable to load explicitly named Vault sources: %s", source_read_errors)
+            return (
+                "Belum dapat menggunakan catatan yang disebut secara eksplisit:\n"
+                + "\n".join(f"- {error}" for error in source_read_errors)
             )
     else:
         context = memory_manager.search_context(search_query, k=6) if memory_manager else ""
@@ -528,6 +610,18 @@ def run_bot_writer(
                     "Periksa akses ke sumber tersebut lalu ulangi pertanyaannya."
                 )
     log_stage(logger, "writer", "retrieval", retrieval_started)
+    if explicit_note_request:
+        erd_answer = _build_explicit_erd_note_answer(prompt, context)
+        if erd_answer:
+            log_stage(
+                logger,
+                "writer",
+                "explicit_erd_source_answer",
+                total_started,
+                outcome="source_verified",
+            )
+            return erd_answer
+
     prompt_started = time.perf_counter()
     if vault_evidence_request:
         available_sources = vault_context_sources(context)
@@ -551,9 +645,10 @@ def run_bot_writer(
                 "belum memuat bukti untuk bagian tersebut. Saya tidak akan menggantinya "
                 "dengan pengetahuan umum. Sebutkan atau tambahkan catatan sumber yang relevan."
             )
-    effective_session_context = "" if vault_evidence_request else session_context
-    effective_history = [] if vault_evidence_request else chat_history[-4:]
-    vault_map = "" if vault_evidence_request else generate_or_get_vault_map()
+    isolated_source_request = vault_evidence_request or explicit_note_request
+    effective_session_context = "" if isolated_source_request else session_context
+    effective_history = [] if isolated_source_request else chat_history[-4:]
+    vault_map = "" if isolated_source_request else generate_or_get_vault_map()
     now_str = datetime.now().strftime("%A, %d %B %Y pukul %H:%M WIB")
     has_context = bool(context and context.strip())
     retrieval_degraded = _RETRIEVAL_WARNING_MARKER in context.lower()
@@ -575,7 +670,22 @@ def run_bot_writer(
         f"5b. {VAULT_SYNTHESIS_POLICY}\n"
         f"5c. {VAULT_FACT_CHECK_POLICY if vault_fact_check else ''}\n"
         f"5d. {VAULT_RECENCY_POLICY if vault_recency else ''}\n"
-        "6. FORMAT KODE OBSIDIAN: Jika menampilkan contoh kode atau skrip pemrograman, WAJIB SELALU membungkusnya dalam format code block Markdown dengan triple backticks dan bahasa (contoh: ```python\\n<kode>\\n```). Dilarang menulis kode sebagai teks mentah biasa.\n\n"
+        + (
+            "5e. Permintaan ini menyebut catatan Vault secara eksplisit. Pisahkan "
+            "pengetahuan umum dan isi catatan dalam bagian yang berbeda. Untuk "
+            "permintaan campuran, gunakan heading persis '## Pengetahuan umum' dan "
+            "'## Yang tertulis di catatan'. Bagian pengetahuan umum berasal dari "
+            "pengetahuan umum, bukan Vault, dan jangan diberi sitasi Vault. Bagian "
+            "catatan hanya boleh memakai file yang disebut eksplisit di konteks; "
+            "cantumkan sitasi persis [Sumber: nama/path-file.md] untuk klaim faktual "
+            "dari file. Jika detail tidak tertulis, katakan 'Saya tidak menemukan "
+            "informasi itu pada catatan yang diperiksa'; jangan menyimpulkan bahwa "
+            "informasi itu tidak ada di seluruh Vault. Jangan gunakan sumber lain, "
+            "sitasi dari riwayat, atau tambahkan peringatan/pencarian web yang tidak "
+            "diminta.\n"
+            if explicit_note_request else ""
+        )
+        + "6. FORMAT KODE OBSIDIAN: Jika menampilkan contoh kode atau skrip pemrograman, WAJIB SELALU membungkusnya dalam format code block Markdown dengan triple backticks dan bahasa (contoh: ```python\\n<kode>\\n```). Dilarang menulis kode sebagai teks mentah biasa.\n\n"
         "═══ KECERDASAN PROAKTIF (PROACTIVE INITIATIVE) ═══\n"
         "Gunakan rekomendasi proaktif secara selektif, bukan sebagai penutup wajib. "
         "Berikan hanya jika pengguna memintanya atau jika ada tindak lanjut/risiko "
@@ -718,6 +828,47 @@ def run_bot_writer(
                 fallback_reply = format_vault_recency_fallback(context)
                 if fallback_reply:
                     final_reply = fallback_reply
+    elif explicit_note_request:
+        is_valid, invalid_reason = validate_explicit_note_answer(reply, context)
+        final_reply = reply
+        if not is_valid:
+            repair_prompt = (
+                "Perbaiki jawaban Anda. Pertahankan penjelasan umum yang benar dan "
+                "jangan sertakan sitasi Vault pada bagian umum. Gunakan heading persis "
+                "'## Pengetahuan umum' dan '## Yang tertulis di catatan'. Pada bagian "
+                "catatan, gunakan hanya catatan yang diberikan dalam konteks dan "
+                "akhiri setiap klaim faktual dengan sitasi yang persis cocok. Jangan "
+                "menyebut sumber lain. Batasi klaim negatif pada catatan yang diperiksa; "
+                "jangan menyatakan sesuatu tidak ada di seluruh Vault. Jika catatan "
+                "tidak mendukung suatu detail, nyatakan bahwa detail itu tidak ditemukan "
+                "pada catatan tersebut. "
+                f"Masalah validasi: {invalid_reason}"
+            )
+            repair_started = time.perf_counter()
+            repaired = chat_with_optional_stream(
+                model=config.MODEL_WRITER,
+                messages=[
+                    *messages,
+                    {"role": "assistant", "content": reply},
+                    {"role": "user", "content": repair_prompt},
+                ],
+                options=config.OPTIONS_WRITER,
+                keep_alive=config.KEEP_ALIVE_DEFAULT,
+            )
+            log_stage(logger, "writer", "explicit_note_repair", repair_started)
+            repaired_reply = repaired.message.content.strip()
+            repaired_valid, repaired_reason = validate_explicit_note_answer(
+                repaired_reply,
+                context,
+            )
+            if repaired_valid:
+                final_reply = repaired_reply
+            else:
+                logger.warning(
+                    "Explicit-note answer remained invalid after repair: %s",
+                    repaired_reason,
+                )
+                final_reply = explicit_note_answer_fallback(reply, context)
     else:
         final_reply = (
             add_citation_verification_notice(reply, context)

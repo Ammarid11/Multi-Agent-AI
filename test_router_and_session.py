@@ -44,6 +44,15 @@ class TestRouter(unittest.TestCase):
     def test_fast_intent_phrase_is_case_insensitive(self):
         self.assertEqual(self.router._fast_intent_check("Tolong CARI DI WEB tentang cuaca"), "web")
 
+    def test_current_developments_request_routes_to_web_without_classifier(self):
+        with patch("agents.router.classify_intent") as classify:
+            result = self.router.route_and_execute(
+                "Cari perkembangan terbaru tentang misi Artemis II NASA."
+            )
+
+        self.assertEqual(result, "bot_web")
+        classify.assert_not_called()
+
     def test_ordinary_information_question_skips_llm_intent_classifier(self):
         with patch("agents.router.classify_intent") as classify:
             result = self.router.route_and_execute("Apa ibu kota Jepang?")
@@ -53,6 +62,17 @@ class TestRouter(unittest.TestCase):
 
     def test_question_about_named_vault_note_routes_to_writer(self):
         prompt = "Di catatan Ringkasan Konsep Java, apa contoh-contoh yang disebutkan?"
+        with patch("agents.router.classify_intent") as classify:
+            result = self.router.route_and_execute(prompt)
+
+        self.assertEqual(result, "bot_writer")
+        classify.assert_not_called()
+
+    def test_mixed_general_question_with_explicit_note_routes_to_writer(self):
+        prompt = (
+            "Jelaskan secara umum apa itu ERD, lalu cocokkan dengan catatan "
+            "`Materi Les Carl - Entity Relationship Diagram.md`."
+        )
         with patch("agents.router.classify_intent") as classify:
             result = self.router.route_and_execute(prompt)
 

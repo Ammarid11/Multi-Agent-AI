@@ -193,6 +193,83 @@ def should_verify_vault_citations(prompt: str) -> bool:
     return bool(VAULT_OR_MEMORY_REFERENCE_PATTERN.search(prompt))
 
 
+def has_explicit_markdown_reference(prompt: str) -> bool:
+    """Return whether a prompt names a Markdown note explicitly."""
+    return bool(re.search(r"\.md\b", prompt, re.IGNORECASE))
+
+
+def load_explicit_vault_sources(
+    prompt: str,
+    vault_root: str | Path,
+) -> Tuple[str, List[str], bool]:
+    """Load only Markdown notes explicitly named in a prompt."""
+    if not has_explicit_markdown_reference(prompt):
+        return "", [], False
+
+    root = Path(vault_root).resolve()
+    if not root.is_dir():
+        return "", [f"Folder Vault tidak dapat diakses: `{root}`."], True
+
+    normalized_prompt = prompt.replace("\\", "/")
+    notes = [
+        path
+        for path in root.rglob("*.md")
+        if not any(part.startswith(".") for part in path.relative_to(root).parts[:-1])
+    ]
+
+    def mentioned(reference: str) -> bool:
+        return bool(
+            re.search(
+                rf"(?<![\w]){re.escape(reference)}(?![\w])",
+                normalized_prompt,
+                re.IGNORECASE,
+            )
+        )
+
+    explicit_paths = [
+        path for path in notes
+        if mentioned(path.relative_to(root).as_posix())
+    ]
+    if not explicit_paths:
+        basename_matches = [path for path in notes if mentioned(path.name)]
+        unique_names = {path.name.casefold() for path in basename_matches}
+        if len(unique_names) == 1 and len(basename_matches) > 1:
+            candidates = "\n".join(
+                f"- `{path.relative_to(root).as_posix()}`"
+                for path in sorted(basename_matches)
+            )
+            return (
+                "",
+                [
+                    "Nama catatan yang disebut cocok dengan beberapa file. "
+                    f"Tentukan path lengkap:\n{candidates}"
+                ],
+                True,
+            )
+        explicit_paths = basename_matches
+
+    if not explicit_paths:
+        return (
+            "",
+            ["Catatan Markdown yang disebut secara eksplisit tidak ditemukan di Vault."],
+            True,
+        )
+
+    blocks = []
+    errors = []
+    for path in sorted(set(explicit_paths)):
+        relative_name = path.relative_to(root).as_posix()
+        try:
+            contents = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            errors.append(
+                f"Gagal membaca `{relative_name}`: {type(error).__name__}: {error}"
+            )
+            continue
+        blocks.append(f"[Sumber: {relative_name}]\n{contents}")
+    return "\n\n---\n\n".join(blocks), errors, True
+
+
 def comparison_subjects(prompt: str) -> Tuple[str, str] | None:
     """Extract the two compared subjects when expressed with a supported conjunction."""
     match = COMPARISON_SUBJECTS_PATTERN.search(prompt)
@@ -693,6 +770,127 @@ def validate_vault_answer(
             return UNGROUNDED_VAULT_ANSWER
 
     return answer.strip()
+
+
+_EXPLICIT_NOTE_SECTION = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:\*\*)?"
+    r"(?:yang\s+tertulis\s+di\s+catatan|catatan\s+yang\s+tertulis\s+di\s+vault|"
+    r"yang\s+tercatat\s+di\s+catatan|yang\s+tertulis\s+di\s+vault)"
+    r"(?:\*\*)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+_EXPLICIT_NOTE_SECTION_BOUNDARY = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s+|\*\*[^*]+\*\*\s*:?\s*$)"
+)
+_EXPLICIT_NOTE_FALLBACK_BOUNDARY = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:\*\*)?"
+    r"(?:validasi\s+catatan|catatan\s+yang\s+tertulis\s+di\s+vault|"
+    r"yang\s+tertulis\s+di\s+catatan|yang\s+tercatat\s+di\s+catatan|"
+    r"catatan\s+terikat\s+di\s+vault|hasil\s+pencarian\s+vault)"
+    r"(?:\*\*)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+_GENERAL_KNOWLEDGE_HEADING = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:\*\*)?"
+    r"(?:pengetahuan\s+umum|penjelasan\s+umum|komponen\s+yang\s+lazim\s+digunakan)"
+    r"(?:\*\*)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+_UNSCOPED_VAULT_ABSENCE = re.compile(
+    r"\b(?:tidak\s+(?:ada|ditemukan|tercatat|memiliki)|"
+    r"belum\s+(?:ada|ditemukan|tercatat))\b.{0,80}"
+    r"\b(?:seluruh\s+vault|semua\s+catatan|di\s+vault|dalam\s+vault)\b|"
+    r"\b(?:seluruh\s+vault|vault)\b.{0,80}"
+    r"\b(?:tidak\s+memiliki|tidak\s+ada|tidak\s+ditemukan)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_explicit_note_section(answer: str) -> str | None:
+    lines = answer.splitlines()
+    for index, line in enumerate(lines):
+        if not _EXPLICIT_NOTE_SECTION.match(line):
+            continue
+        section_lines = []
+        for section_line in lines[index + 1:]:
+            if _EXPLICIT_NOTE_SECTION_BOUNDARY.match(section_line):
+                break
+            section_lines.append(section_line)
+        return "\n".join(section_lines).strip()
+    return None
+
+
+def validate_explicit_note_answer(answer: str, context: str) -> Tuple[bool, str]:
+    """Validate that an answer to a named-note request stays within that note."""
+    allowed_sources = vault_context_sources(context)
+    if not answer.strip() or not allowed_sources:
+        return False, "Tidak ada sumber catatan eksplisit yang dapat diverifikasi."
+
+    normalized_allowed = {source.replace("\\", "/").casefold() for source in allowed_sources}
+    allowed_basenames = {
+        os.path.basename(source.replace("\\", "/")).casefold()
+        for source in allowed_sources
+    }
+    cited_sources = [
+        *SOURCE_MARKER_PATTERN.findall(answer),
+        *(match[0] for match in MARKDOWN_SOURCE_LINK_PATTERN.findall(answer)),
+    ]
+    for cited_source in cited_sources:
+        normalized_source = cited_source.strip().replace("\\", "/").casefold()
+        if (
+            normalized_source not in normalized_allowed
+            and os.path.basename(normalized_source) not in allowed_basenames
+        ):
+            return False, f"Jawaban menyertakan sumber di luar catatan yang diminta: {cited_source.strip()}."
+
+    if _UNSCOPED_VAULT_ABSENCE.search(answer):
+        return False, "Jawaban membuat klaim ketiadaan yang melampaui catatan yang diperiksa."
+
+    note_section = _extract_explicit_note_section(answer)
+    if not note_section:
+        return False, "Bagian isi catatan tidak dipisahkan dengan label yang jelas."
+    if validate_vault_answer(note_section, context) == UNGROUNDED_VAULT_ANSWER:
+        return False, "Klaim pada bagian catatan tidak memiliki sitasi yang dapat diverifikasi."
+    return True, ""
+
+
+def explicit_note_answer_fallback(answer: str, context: str) -> str:
+    """Keep general-knowledge content while abstaining on invalid note claims."""
+    lines = answer.splitlines()
+    general_lines = []
+    found_note_boundary = False
+    for line in lines:
+        if _EXPLICIT_NOTE_FALLBACK_BOUNDARY.match(line):
+            found_note_boundary = True
+            break
+        general_lines.append(line)
+
+    if not found_note_boundary:
+        general_lines = []
+        for index, line in enumerate(lines):
+            if not _GENERAL_KNOWLEDGE_HEADING.match(line):
+                continue
+            general_lines.append(line)
+            for section_line in lines[index + 1:]:
+                if _EXPLICIT_NOTE_SECTION_BOUNDARY.match(section_line):
+                    break
+                general_lines.append(section_line)
+            break
+
+    general_answer = "\n".join(general_lines).strip()
+    general_answer = SOURCE_MARKER_PATTERN.sub("", general_answer)
+    general_answer = re.sub(r"[ \t]{2,}", " ", general_answer)
+    general_answer = re.sub(r" +([.,;:])", r"\1", general_answer)
+    source_names = ", ".join(vault_context_sources(context))
+    note_result = (
+        "## Yang tertulis di catatan\n"
+        f"Saya belum dapat memverifikasi klaim tentang catatan {source_names}: "
+        "jawaban yang dihasilkan memakai sumber di luar catatan yang diminta, "
+        "tidak membatasi kesimpulan pada catatan yang diperiksa, atau tidak "
+        "menyertakan sitasi yang dapat diverifikasi. Karena itu saya tidak akan "
+        "menyimpulkan isi catatan maupun ketiadaan informasi di seluruh Vault."
+    )
+    return f"{general_answer}\n\n{note_result}".strip() if general_answer else note_result
 
 
 def add_citation_verification_notice(answer: str, context: str) -> str:

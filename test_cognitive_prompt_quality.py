@@ -9,6 +9,7 @@ from unittest.mock import patch
 from agents.bot_reasoner import run_bot_reasoner, should_use_deep_reasoning
 from agents.bot_writer import (
     _extract_markdown_section,
+    _build_explicit_erd_note_answer,
     _resolve_summary_source,
     is_named_note_summary_request,
     run_bot_writer,
@@ -21,6 +22,7 @@ from agents.grounding import (
     format_vault_recency_fallback,
     is_vault_fact_check_request,
     is_vault_recency_request,
+    load_explicit_vault_sources,
     missing_vault_recency_requirements,
     validate_vault_answer,
     UNGROUNDED_VAULT_ANSWER,
@@ -46,6 +48,228 @@ class ContextMemory:
 
 
 class TestCognitivePromptQuality(unittest.TestCase):
+    def test_e2_explicit_erd_note_answer_reports_only_facts_present_in_target(self):
+        prompt = (
+            "Jelaskan secara umum apa itu Entity Relationship Diagram (ERD) dan "
+            "sebutkan komponen yang lazim digunakan. Lalu, berdasarkan catatan "
+            "`Materi Les Carl - Entity Relationship Diagram.md`, mana dari penjelasan "
+            "itu yang memang tertulis di catatan saya?"
+        )
+        source = "03-Resources/Materi Les Carl - Entity Relationship Diagram.md"
+        note_text = (
+            "Entity Relationship Diagram (ERD) adalah diagram visual untuk merancang "
+            "struktur database. 3 Komponen Utama dalam ERD: Entitas, Atribut, Relasi. "
+            "One-to-One, One-to-Many, Many-to-Many. Relasi Rekursif antara karyawan "
+            "dan manajer. Ternary Relationship: pemasok mengirimkan produk ke gudang."
+        )
+        context = f"[Sumber: {source}]\n{note_text}"
+
+        answer = _build_explicit_erd_note_answer(prompt, context)
+
+        self.assertIsNotNone(answer)
+        self.assertIn("## Pengetahuan umum", answer)
+        self.assertIn("## Yang tertulis di catatan", answer)
+        self.assertIn("entitas, atribut, dan relasi", answer)
+        self.assertIn("One-to-One, One-to-Many, dan Many-to-Many", answer)
+        self.assertIn("relasi rekursif", answer)
+        self.assertIn("relasi tiga arah (ternary)", answer)
+        self.assertEqual(answer.count("[Sumber:"), 1)
+        self.assertIn(f"[Sumber: {source}]", answer)
+
+    def test_e2_writer_uses_source_checked_erd_answer_without_model_inference(self):
+        prompt = (
+            "Jelaskan secara umum apa itu Entity Relationship Diagram (ERD) dan "
+            "sebutkan komponen yang lazim digunakan. Lalu, berdasarkan catatan "
+            "`Materi Les Carl - Entity Relationship Diagram.md`, mana dari penjelasan "
+            "itu yang memang tertulis di catatan saya? Pisahkan pengetahuan umum "
+            "dari isi catatan."
+        )
+        with TemporaryDirectory() as vault:
+            note = Path(vault) / "Materi Les Carl - Entity Relationship Diagram.md"
+            note.write_text(
+                "Entity Relationship Diagram (ERD) adalah diagram visual untuk "
+                "merancang struktur database. 3 Komponen Utama dalam ERD: Entitas, "
+                "Atribut, Relasi. One-to-One, One-to-Many, Many-to-Many. Relasi "
+                "Rekursif antara karyawan dan manajer. Ternary Relationship: pemasok "
+                "mengirimkan produk ke gudang.",
+                encoding="utf-8",
+            )
+            with (
+                patch("agents.bot_writer.config.VAULT_PATH", Path(vault)),
+                patch("agents.bot_writer.chat_with_optional_stream") as chat,
+                patch("agents.bot_writer.generate_or_get_vault_map") as vault_map,
+            ):
+                answer = run_bot_writer(prompt, EmptyMemory(), [])
+
+        chat.assert_not_called()
+        vault_map.assert_not_called()
+        self.assertIn("entitas, atribut, dan relasi", answer)
+        self.assertIn("One-to-One, One-to-Many, dan Many-to-Many", answer)
+        self.assertIn("relasi rekursif", answer)
+        self.assertIn("relasi tiga arah (ternary)", answer)
+        self.assertIn("[Sumber: Materi Les Carl - Entity Relationship Diagram.md]", answer)
+        self.assertNotIn("tidak tertulis", answer)
+        self.assertNotIn("tidak ditemukan", answer)
+
+    def test_explicit_markdown_source_loads_only_named_note(self):
+        prompt = (
+            "Jelaskan ERD secara umum lalu cocokkan dengan catatan "
+            "`Materi Les Carl - Entity Relationship Diagram.md`."
+        )
+        with TemporaryDirectory() as vault:
+            root = Path(vault)
+            named_note = root / "Materi Les Carl - Entity Relationship Diagram.md"
+            named_note.write_text("Entitas dan relasi dicatat di sini.", encoding="utf-8")
+            (root / "Catatan Tidak Relevan.md").write_text(
+                "Materi microservices yang tidak diminta.", encoding="utf-8"
+            )
+
+            context, errors, explicit = load_explicit_vault_sources(prompt, root)
+
+        self.assertTrue(explicit)
+        self.assertEqual(errors, [])
+        self.assertIn("[Sumber: Materi Les Carl - Entity Relationship Diagram.md]", context)
+        self.assertIn("Entitas dan relasi dicatat di sini.", context)
+        self.assertNotIn("microservices", context)
+
+    def test_explicit_note_request_separates_general_knowledge_from_named_vault_note(self):
+        prompt = (
+            "Jelaskan secara umum apa itu Entity Relationship Diagram (ERD) dan "
+            "sebutkan komponen yang lazim digunakan. Lalu, berdasarkan catatan "
+            "`Materi Les Carl - Entity Relationship Diagram.md`, mana yang memang "
+            "tertulis di catatan saya? Pisahkan pengetahuan umum dari isi catatan."
+        )
+        with TemporaryDirectory() as vault:
+            root = Path(vault)
+            note = root / "Materi Les Carl - Entity Relationship Diagram.md"
+            note.write_text("Catatan hanya menyebut entitas dan relasi.", encoding="utf-8")
+            (root / "Materi Les Carl - Arsitektur Microservices Modern.md").write_text(
+                "Catatan lain tentang microservices.", encoding="utf-8"
+            )
+            response = SimpleNamespace(
+                message=SimpleNamespace(
+                    content=(
+                        "## Pengetahuan umum\n"
+                        "ERD memodelkan entitas dan hubungannya.\n\n"
+                        "## Yang tertulis di catatan\n"
+                        "Catatan menyebut entitas dan relasi. "
+                        "[Sumber: Materi Les Carl - Entity Relationship Diagram.md]"
+                    )
+                )
+            )
+            memory = ContextMemory(
+                "[Sumber: Catatan Tidak Relevan.md]\nKonteks graph yang tidak diminta."
+            )
+
+            with (
+                patch("agents.bot_writer.config.VAULT_PATH", root),
+                patch("agents.bot_writer.generate_or_get_vault_map") as vault_map,
+                patch("agents.bot_writer.chat_with_optional_stream", return_value=response) as chat,
+                patch.object(memory, "search_context", wraps=memory.search_context) as search,
+            ):
+                result = run_bot_writer(
+                    prompt,
+                    memory,
+                    [{"role": "user", "content": "Riwayat sebelumnya"}],
+                    session_context="Ringkasan sesi tidak relevan.",
+                )
+
+        search.assert_not_called()
+        vault_map.assert_not_called()
+        self.assertIn("Pengetahuan umum", result)
+        self.assertIn("[Sumber: Materi Les Carl - Entity Relationship Diagram.md]", result)
+        self.assertNotIn("Catatan Tidak Relevan.md", result)
+        self.assertNotIn("microservices", result)
+        system_prompt = chat.call_args.kwargs["messages"][0]["content"]
+        self.assertIn("gunakan heading persis", system_prompt)
+        self.assertNotIn("Riwayat sebelumnya", system_prompt)
+        self.assertNotIn("Ringkasan sesi tidak relevan.", system_prompt)
+
+    def test_explicit_note_answer_repairs_unallowed_sources_and_broad_absence_claims(self):
+        prompt = (
+            "Jelaskan ERD secara umum lalu cocokkan dengan catatan "
+            "`Materi Les Carl - Entity Relationship Diagram.md`."
+        )
+        invalid = SimpleNamespace(
+            message=SimpleNamespace(
+                content=(
+                    "## Pengetahuan umum\n"
+                    "ERD memodelkan entitas dan hubungannya.\n\n"
+                    "## Validasi Catatan\n"
+                    "Jenis relasi ada di [Diskusi Carl & Gemini - Uji Otomasi Unit Test.md].\n\n"
+                    "## Catatan yang Tertulis di Vault\n"
+                    "Informasi ini tidak ditemukan di seluruh Vault. "
+                    "[Sumber: Rangkuman - Percakapan (3).md]"
+                )
+            )
+        )
+        repaired = SimpleNamespace(
+            message=SimpleNamespace(
+                content=(
+                    "## Pengetahuan umum\n"
+                    "ERD memodelkan entitas dan hubungannya.\n\n"
+                    "## Yang tertulis di catatan\n"
+                    "Catatan yang diperiksa menyebut entitas dan relasi. "
+                    "[Sumber: Materi Les Carl - Entity Relationship Diagram.md]"
+                )
+            )
+        )
+
+        with TemporaryDirectory() as vault:
+            note = Path(vault) / "Materi Les Carl - Entity Relationship Diagram.md"
+            note.write_text("Catatan menyebut entitas dan relasi.", encoding="utf-8")
+            with (
+                patch("agents.bot_writer.config.VAULT_PATH", Path(vault)),
+                patch(
+                    "agents.bot_writer.chat_with_optional_stream",
+                    side_effect=[invalid, repaired],
+                ) as chat,
+                patch("agents.bot_writer.generate_or_get_vault_map"),
+            ):
+                result = run_bot_writer(prompt, EmptyMemory(), [])
+
+        self.assertEqual(chat.call_count, 2)
+        self.assertIn("## Pengetahuan umum", result)
+        self.assertIn("## Yang tertulis di catatan", result)
+        self.assertIn("[Sumber: Materi Les Carl - Entity Relationship Diagram.md]", result)
+        self.assertNotIn("Diskusi Carl", result)
+        self.assertNotIn("seluruh Vault", result)
+
+    def test_explicit_note_failed_repair_keeps_general_answer_and_abstains_on_vault(self):
+        prompt = (
+            "Jelaskan ERD secara umum lalu cocokkan dengan catatan "
+            "`Materi Les Carl - Entity Relationship Diagram.md`."
+        )
+        invalid = SimpleNamespace(
+            message=SimpleNamespace(
+                content=(
+                    "## Pengetahuan umum\n"
+                    "ERD adalah diagram untuk memodelkan entitas.\n\n"
+                    "## Validasi Catatan\n"
+                    "Tidak ada informasi itu di seluruh Vault."
+                )
+            )
+        )
+
+        with TemporaryDirectory() as vault:
+            note = Path(vault) / "Materi Les Carl - Entity Relationship Diagram.md"
+            note.write_text("Isi catatan.", encoding="utf-8")
+            with (
+                patch("agents.bot_writer.config.VAULT_PATH", Path(vault)),
+                patch(
+                    "agents.bot_writer.chat_with_optional_stream",
+                    side_effect=[invalid, invalid],
+                ) as chat,
+                patch("agents.bot_writer.generate_or_get_vault_map"),
+            ):
+                result = run_bot_writer(prompt, EmptyMemory(), [])
+
+        self.assertEqual(chat.call_count, 2)
+        self.assertIn("ERD adalah diagram untuk memodelkan entitas.", result)
+        self.assertIn("belum dapat memverifikasi", result)
+        self.assertIn("tidak akan menyimpulkan", result)
+        self.assertNotIn("tidak ada informasi itu di seluruh Vault", result)
+
     def test_d4_prompt_is_recognized_as_a_vault_claim_check(self):
         prompt = (
             "Apakah keputusan bahwa QA dilakukan manual dan otomasi pengecekan "
@@ -358,6 +582,52 @@ class TestCognitivePromptQuality(unittest.TestCase):
             )
 
         self.assertEqual(result, answer)
+
+    def test_e1_reasoner_corrects_arithmetic_and_omits_irrelevant_vault_sources(self):
+        prompt = (
+            "Sebuah toko menerima 24 kotak buku. Setiap kotak berisi 36 buku. "
+            "Pada hari pertama terjual 157 buku dan pada hari kedua terjual 89 buku. "
+            "Berapa buku yang tersisa? Tunjukkan langkah perhitungannya."
+        )
+        self.assertTrue(should_use_deep_reasoning(prompt))
+        response = SimpleNamespace(
+            message=SimpleNamespace(
+                content=(
+                    "Buku yang tersisa adalah 388 buku.\n\n"
+                    "Total buku = 24 × 36 = 864 buku\n"
+                    "[Sumber: Materi Les Carl - Matematika Dasar.md]\n"
+                    "Total penjualan = 157 + 89 = 246 buku\n"
+                    "[Sumber: Materi Les Carl - Matematika Dasar.md]\n"
+                    "Buku tersisa = Total buku - Total penjualan\n"
+                    "= 864 - 246\n"
+                    "= 388 buku\n"
+                    "[Sumber: Materi Les Carl - Matematika Dasar.md]"
+                )
+            )
+        )
+        memory = ContextMemory(
+            "[Sumber: Materi Les Carl - Matematika Dasar.md]\nCatatan matematika."
+        )
+
+        with (
+            patch.object(memory, "search_context", wraps=memory.search_context) as search,
+            patch("agents.bot_reasoner.chat_with_optional_stream", return_value=response) as chat,
+        ):
+            result = run_bot_reasoner(
+                prompt,
+                memory,
+                [{"role": "user", "content": "konteks riwayat"}],
+                session_context="Konteks sesi tidak terkait.",
+            )
+
+        search.assert_not_called()
+        self.assertIn("618 buku", result)
+        self.assertNotIn("388", result)
+        self.assertNotIn("[Sumber:", result)
+        system_prompt = chat.call_args.kwargs["messages"][0]["content"]
+        self.assertNotIn("Catatan matematika.", system_prompt)
+        self.assertNotIn("Konteks sesi tidak terkait.", system_prompt)
+        self.assertEqual(len(chat.call_args.kwargs["messages"]), 2)
 
     def test_vault_lookup_prompt_distinguishes_name_match_from_claim_evidence(self):
         response = SimpleNamespace(message=SimpleNamespace(content="Alvi ditemukan."))

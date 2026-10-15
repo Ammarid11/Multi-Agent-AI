@@ -27,15 +27,19 @@ _PLAN_FIELDS = {
 
 def _extract_plan_json(raw: str) -> List[Dict[str, Any]]:
     """Mengekstrak list sub-tugas JSON dari keluaran model."""
+    if not raw:
+        return []
+        
     clean = raw.strip()
-    match = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", clean, re.DOTALL)
+    # Memperbaiki pola agar grup yang berisi array tertangkap dengan benar di group(1)
+    match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", clean)
     if match:
         clean = match.group(1).strip()
     else:
-        match_arr = re.search(r"\[.*\]", clean, re.DOTALL)
+        match_arr = re.search(r"\[[\s\S]*\]", clean)
         if match_arr:
             clean = match_arr.group(0).strip()
-
+            
     try:
         data = json.loads(clean, strict=False)
         return (
@@ -48,37 +52,70 @@ def _extract_plan_json(raw: str) -> List[Dict[str, Any]]:
 
 
 def _validate_plan_steps(plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Memvalidasi daftar langkah rencana dari model dengan pengaman tambahan dan log."""
     validated = []
-    for step in plan:
+    for idx, step in enumerate(plan):
+        if not isinstance(step, dict):
+            continue
+            
         action = step.get("action")
         if not isinstance(action, str):
             continue
+            
         normalized_action = action.casefold().strip()
         required_fields = _PLAN_FIELDS.get(normalized_action)
-        if not required_fields or any(
-            not isinstance(step.get(field), str) or not step[field].strip()
-            for field in required_fields
-        ):
+        
+        if not required_fields:
             continue
+            
+        # Periksa kelengkapan field wajib
+        failed = False
+        for field in required_fields:
+            val = step.get(field)
+            # Memastikan field ada, berupa string, dan tidak kosong setelah strip
+            if not isinstance(val, str) or not val.strip():
+                failed = True
+                break
+                
+        if failed:
+            continue
+            
         validated.append({**step, "action": normalized_action})
     return validated
 
 
 def _tool_reported_success(result: str) -> bool:
-    normalized = result.strip()
-    return normalized.startswith("✅") or (
-        normalized.startswith("📝 File ") and "berhasil dibuat" in normalized.casefold()
-    )
+    """Memeriksa apakah laporan hasil alat menunjukkan status sukses dengan lebih fleksibel."""
+    if not result or not isinstance(result, str):
+        return False
+        
+    normalized = result.strip().casefold()
+    
+    # Periksa simbol atau kata kunci umum yang menandakan keberhasilan
+    success_indicators = [
+        "✅", 
+        "berhasil dibuat", 
+        "sukses", 
+        "success", 
+        "berhasil disimpan"
+    ]
+    
+    return any(indicator.casefold() in normalized for indicator in success_indicators)
 
 
 class AutonomousGoalEngine:
-    """Mesin Eksekusi Tujuan Mandiri Multi-Step dengan Self-Healing."""
+    """Mesin Eksekusi Tujuan Mandiri Multi-Step dengan Self-Healing yang disempurnakan."""
     def __init__(self, memory_manager, user_name: str = "Pengguna"):
         self.memory = memory_manager
         self.user_name = user_name
 
     def plan_steps(self, goal: str) -> List[Dict[str, Any]]:
-        """Menguraikan tujuan pengguna menjadi 2-4 sub-tugas terstruktur."""
+        """Menguraikan tujuan pengguna menjadi 2-4 sub-tugas terstruktur dengan mekanisme retry."""
+        # Ambil konteks memori jika tersedia untuk memperkaya perencanaan
+        context = ""
+        if self.memory and hasattr(self.memory, "get_summary"):
+            context = f"\nKonteks Percakapan Sebelumnya: {self.memory.get_summary()}\n"
+
         sys_prompt = (
             "Anda adalah AI Task Planner tingkat lanjut.\n"
             "TUGAS: Pecah tujuan pengguna berikut menjadi 2 hingga 4 sub-tugas berurutan.\n"
@@ -86,26 +123,35 @@ class AutonomousGoalEngine:
             "- 'web_search': {action: 'web_search', query: 'kata kunci'}\n"
             "- 'read_file': {action: 'read_file', filename: 'nama_file.md'}\n"
             "- 'write_file': {action: 'write_file', filename: 'folder/nama_file.md', summary: 'poin isi'}\n"
-            "- 'append_file': {action: 'append_file', filename: 'nama_file.md', content: 'isi teks'}\n\n"
+            "- 'append_file': {action: 'append_file', filename: 'nama_file.md', content: 'isi teks'}\n"
             "ATURAN:\n"
             "1. Kembalikan HANYA array JSON murni (tanpa teks penjelasan lain).\n"
             "2. Contoh format: [{\"action\": \"web_search\", \"query\": \"...\"}, {\"action\": \"write_file\", \"filename\": \"...\", \"summary\": \"...\"}]\n"
+            + context
         )
 
-        try:
-            res = ollama.chat(
-                model=config.MODEL_WRITER,
-                messages=[
-                    {'role': 'system', 'content': sys_prompt},
-                    {'role': 'user', 'content': f"Tujuan Pengguna: {goal}"}
-                ],
-                options={"temperature": 0.1},
-                keep_alive=config.KEEP_ALIVE_DEFAULT
-            )
-            return _validate_plan_steps(_extract_plan_json(res.message.content))
-        except Exception:
-            logger.exception("Unable to create an executable goal plan.")
-            return []
+        messages = [
+            {'role': 'system', 'content': sys_prompt},
+            {'role': 'user', 'content': f"Tujuan Pengguna: {goal}"}
+        ]
+
+        # Mekanisme Self-Healing: Coba hingga 2 kali jika validasi gagal
+        for attempt in range(2):
+            try:
+                res = ollama.chat(
+                    model=config.MODEL_WRITER,
+                    messages=messages,
+                    options={"temperature": 0.1},
+                    keep_alive=config.KEEP_ALIVE_DEFAULT
+                )
+                steps = _validate_plan_steps(_extract_plan_json(res.message.content))
+                if steps:
+                    return steps
+            except Exception:
+                logger.exception(f"Percobaan ke-{attempt + 1} gagal membuat rencana. Mencoba ulang...")
+
+        logger.error("Semua percobaan pembuatan rencana tugas gagal.")
+        return []
 
     def execute_goal(self, goal: str) -> str:
         """Mengeksekusi rencana langkah demi langkah dengan pemulihan mandiri (Self-Healing)."""
@@ -160,8 +206,13 @@ class AutonomousGoalEngine:
                     successful_steps += 1
 
                 elif action == "write_file":
-                    fn = step["filename"]
-                    summary = step["summary"]
+                    fn = step.get("filename", "")
+                    summary = step.get("summary", "")
+                    if not fn:
+                        failed_steps += 1
+                        execution_logs.append(f"⚠️ **Langkah {idx} (Buat Berkas) gagal:** nama berkas tidak valid.")
+                        continue
+
                     # Sintesis isi file berdasarkan konteks yang terkumpul
                     file_prompt = (
                         f"Buat isi catatan rapi dalam format Markdown Obsidian untuk: {summary}.\n"
@@ -190,6 +241,11 @@ class AutonomousGoalEngine:
                 elif action == "append_file":
                     fn = step.get("filename", "")
                     content_to_add = step.get("content", f"\n- Catatan terkait: [[{goal}]]")
+                    if not fn:
+                        failed_steps += 1
+                        execution_logs.append(f"⚠️ **Langkah {idx} (Hubungkan Berkas) gagal:** nama berkas tidak valid.")
+                        continue
+                        
                     append_res = append_file(fn, content_to_add)
                     if _tool_reported_success(append_res):
                         successful_steps += 1
@@ -227,3 +283,4 @@ class AutonomousGoalEngine:
                 f"({failed_steps} gagal/dilewati)."
             )
         return "\n".join(execution_logs)
+    

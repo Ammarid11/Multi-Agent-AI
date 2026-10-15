@@ -633,6 +633,74 @@ class TestWebReferenceHandling(unittest.TestCase):
             "zona waktu tidak diketahui",
             _format_date("2026-10-13T08:00:00"),
         )
+        self.assertEqual(_format_date("2026-10-13"), "13 October 2026")
+
+    def test_article_date_extraction_reads_meta_and_nested_json_ld(self):
+        from tools.tool_web_search import _extract_article_dates
+
+        html = """
+        <html><head>
+        <meta content="2026-10-14T09:00:00Z" property="article:published_time">
+        <script type="application/ld+json; charset=utf-8">
+        {"@graph":[{"@type":"NewsArticle","dateModified":"2026-10-15"}]}
+        </script>
+        </head></html>
+        """
+
+        self.assertEqual(
+            _extract_article_dates(html),
+            ("2026-10-14T09:00:00Z", "2026-10-15"),
+        )
+
+    def test_search_index_date_is_not_marked_as_verified_page_metadata(self):
+        from unittest.mock import patch
+        from tools.tool_web_search import web_search_structured
+
+        result = {
+            "title": "Search result",
+            "url": "https://news.example/story",
+            "source": "news.example",
+            "date": "15 October 2026",
+            "snippet": "A sufficiently long article snippet to be used as context.",
+        }
+        with (
+            patch("tools.tool_web_search._search_ddg", return_value=[result]),
+            patch("tools.tool_web_search._fetch_article_page", return_value=("", "", "")),
+        ):
+            context, references = web_search_structured("latest news")
+
+        self.assertNotIn("verified_date", references[0])
+        self.assertIn("belum diverifikasi di halaman", references[0]["date_label"])
+        self.assertIn("belum diverifikasi di halaman", context)
+
+    def test_verified_update_date_is_used_when_page_has_publication_and_update_dates(self):
+        from unittest.mock import patch
+        from tools.tool_web_search import web_search_structured
+
+        result = {
+            "title": "Updated article",
+            "url": "https://www.nasa.gov/story",
+            "source": "nasa.gov",
+            "date": "15 October 2026",
+            "snippet": "A sufficiently long official article snippet for context.",
+        }
+        with (
+            patch("tools.tool_web_search._search_ddg", return_value=[result]),
+            patch(
+                "tools.tool_web_search._fetch_article_page",
+                return_value=(
+                    "Article body",
+                    "2026-04-09",
+                    "2026-10-14",
+                ),
+            ),
+        ):
+            _, references = web_search_structured("latest NASA news")
+
+        self.assertEqual(references[0]["published_date"], "2026-04-09")
+        self.assertEqual(references[0]["modified_date"], "2026-10-14")
+        self.assertEqual(references[0]["verified_date"], "2026-10-14")
+        self.assertIn("diperbarui", references[0]["date_label"])
 
 
 if __name__ == "__main__":

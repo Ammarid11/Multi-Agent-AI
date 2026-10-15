@@ -8,7 +8,10 @@ coder_tools = [create_python_file]
 
 
 def run_bot_coder(prompt: str, chat_history: List[Dict[str, str]]) -> str:
-    """Spesialis pembuatan kode dan skrip Python."""
+    """Spesialis pembuatan kode dan skrip Python dengan validasi input dan integrasi alat."""
+    if not prompt or not prompt.strip():
+        return "❌ Masukkan instruksi pembuatan atau perbaikan kode yang valid."
+
     print(f"\n⚡ [Bot Coder ({config.MODEL_CODER})] Memproses kode...")
 
     sys_prompt = (
@@ -28,5 +31,6 @@ def run_bot_coder(prompt: str, chat_history: List[Dict[str, str]]) -> str:
         messages=messages,
         options=config.OPTIONS_CODER,
         keep_alive=config.KEEP_ALIVE_SPECIALIST,
+        tools=coder_tools,  # PERBAIKAN: Menyertakan coder_tools agar alat dapat digunakan
     )
     return res.message.content

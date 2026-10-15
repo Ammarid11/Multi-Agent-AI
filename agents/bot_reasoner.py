@@ -38,7 +38,7 @@ _DEEP_REASONING_CUES = re.compile(
     r"optimalkan|pemecahan masalah|pecahkan masalah|langkah demi langkah|"
     r"logika|buktikan|evaluasi kritis|pilih yang terbaik|rencana|"
     r"terbaru|paling\s+baru|terkini|paling\s+mutakhir|"
-    r"hitung|perhitungan|selesaikan persamaan"
+    r"hitung|perhitung(?:an(?:nya)?)?|selesaikan persamaan"
     r")\b",
     re.IGNORECASE,
 )
@@ -50,6 +50,89 @@ _MULTI_PART_CUES = re.compile(
     r"\b(?:dan|lalu|kemudian|sementara|dibandingkan|dengan|serta)\b",
     re.IGNORECASE,
 )
+_GENERAL_CALCULATION_CUES = re.compile(
+    r"\b(?:hitung|perhitungan|perhitungannya|kalkulasi|matematika|"
+    r"hasil\s+hitung|langkah\s+perhitungan)\b",
+    re.IGNORECASE,
+)
+_VAULT_REFERENCE_CUES = re.compile(
+    r"\b(?:vault|obsidian|catatan(?:\s+saya)?|menurut\s+catatan)\b",
+    re.IGNORECASE,
+)
+_ARITHMETIC_OPERATION = re.compile(r"^\s*=\s*(\d+)\s*([+\-−×*])\s*(\d+)\s*$")
+_ARITHMETIC_RESULT = re.compile(r"^(\s*=\s*)(\d+)(.*)$")
+_INLINE_ARITHMETIC = re.compile(
+    r"^(\s*)(\d+)\s*([+\-−×*])\s*(\d+)\s*=\s*(\d+)(.*)$"
+)
+
+
+def _is_general_calculation_request(prompt: str) -> bool:
+    """Keep self-contained arithmetic questions separate from Vault retrieval."""
+    return bool(
+        _GENERAL_CALCULATION_CUES.search(prompt)
+        and not _VAULT_REFERENCE_CUES.search(prompt)
+    )
+
+
+def _evaluate_basic_operation(left: str, operator: str, right: str) -> int:
+    first, second = int(left), int(right)
+    if operator == "+":
+        return first + second
+    if operator in {"-", "−"}:
+        return first - second
+    return first * second
+
+
+def _verify_displayed_arithmetic(prompt: str, answer: str) -> str:
+    """Correct explicit basic arithmetic equations and matching answer values."""
+    lines = answer.splitlines()
+    corrections: list[tuple[str, str]] = []
+
+    for index, line in enumerate(lines):
+        inline = _INLINE_ARITHMETIC.match(line)
+        if inline:
+            expected = _evaluate_basic_operation(
+                inline.group(2), inline.group(3), inline.group(4)
+            )
+            shown = inline.group(5)
+            if int(shown) != expected:
+                lines[index] = (
+                    f"{inline.group(1)}{inline.group(2)} {inline.group(3)} "
+                    f"{inline.group(4)} = {expected}{inline.group(6)}"
+                )
+                corrections.append((shown, str(expected)))
+            continue
+
+        operation = _ARITHMETIC_OPERATION.match(line)
+        if not operation:
+            continue
+        result_index = index + 1
+        while result_index < len(lines) and not lines[result_index].strip():
+            result_index += 1
+        if result_index >= len(lines):
+            continue
+        result = _ARITHMETIC_RESULT.match(lines[result_index])
+        if not result:
+            continue
+        expected = _evaluate_basic_operation(
+            operation.group(1), operation.group(2), operation.group(3)
+        )
+        shown = result.group(2)
+        if int(shown) != expected:
+            lines[result_index] = f"{result.group(1)}{expected}{result.group(3)}"
+            corrections.append((shown, str(expected)))
+
+    answer = "\n".join(lines)
+    distinct_corrections = dict(corrections)
+    if len(distinct_corrections) == 1:
+        incorrect, corrected = next(iter(distinct_corrections.items()))
+        if not re.search(rf"(?<!\d){re.escape(incorrect)}(?!\d)", prompt):
+            answer = re.sub(
+                rf"(?<!\d){re.escape(incorrect)}(?!\d)",
+                corrected,
+                answer,
+            )
+    return answer
 
 
 def should_use_deep_reasoning(prompt: str) -> bool:
@@ -82,6 +165,7 @@ def run_bot_reasoner(
     vault_recency = is_vault_recency_request(prompt)
     vault_fact_check = is_vault_fact_check_request(prompt)
     vault_lookup_request = should_verify_vault_citations(prompt)
+    general_calculation = _is_general_calculation_request(prompt)
     vault_evidence_request = (
         vault_comparison or vault_synthesis or vault_recency or vault_fact_check
     )
@@ -97,6 +181,8 @@ def run_bot_reasoner(
                 "bukti bertanggal tidak dapat diselesaikan. Tidak ada klaim kebaruan "
                 "yang akan dibuat."
             )
+    elif general_calculation:
+        context = ""
     else:
         context = memory_manager.search_context(prompt, k=6) if memory_manager else ""
     if vault_evidence_request:
@@ -136,7 +222,8 @@ def run_bot_reasoner(
             )
 
     prompt_started = time.perf_counter()
-    effective_session_context = "" if vault_evidence_request else session_context
+    isolated_context_request = vault_evidence_request or general_calculation
+    effective_session_context = "" if isolated_context_request else session_context
     sys_prompt = (
         "═══ IDENTITAS & LAWAN BICARA ═══\n"
         f"Anda adalah pakar analisis dan pemecahan masalah kritis untuk {user_name}.\n"
@@ -181,22 +268,26 @@ def run_bot_reasoner(
         "═══ PRINSIP PENALARAN DEEPSEEK-R1 ═══\n"
         "- Berpikir kritis, objektif, dan teliti mengaitkan konsep lintas catatan.\n"
         "- Jika data penting tidak ada, nyatakan asumsi atau minta klarifikasi; jangan mengisi kekosongan dengan tebakan.\n"
-        "- Untuk hitungan, tunjukkan rumus, nilai yang dipakai, dan hasil agar dapat diverifikasi.\n"
+        "- Untuk hitungan, tunjukkan rumus, nilai yang dipakai, dan hasil agar dapat diverifikasi. "
+        "Hitung ulang setiap operasi aritmetika sebelum memberikan hasil akhir; jangan "
+        "menyimpulkan hasil hanya dari langkah sebelumnya. Untuk hitungan umum, jangan "
+        "mencantumkan sitasi Vault.\n"
         f"- Sesuaikan rekomendasi secara personal untuk {user_name} hanya jika diminta "
         "atau memang relevan; jangan tambahkan kode/anjuran verifikasi pada hitungan "
         "sederhana kecuali diminta.\n"
         "- Untuk fakta umum yang tidak meminta Vault, jangan menyiratkan bahwa jawaban "
         "bersumber dari Vault atau menampilkan peringatan sitasi yang tidak relevan.\n"
-        f"- {VAULT_GROUNDING_POLICY}\n"
+        f"- {VAULT_GROUNDING_POLICY if not general_calculation else ''}\n"
         "- Riwayat dan ringkasan sesi bukan bukti faktual; labeli sebagai informasi percakapan yang belum diverifikasi.\n"
-        "- Jika konteks kosong atau tidak menjawab pertanyaan, nyatakan keterbatasan dan jangan mengarang.\n\n"
+        f"{'- Jika konteks kosong atau tidak menjawab pertanyaan, nyatakan keterbatasan dan jangan mengarang.' if not general_calculation else ''}\n\n"
         f"═══ KONTEKS SESI (RIWAYAT, BUKAN SUMBER FAKTA TERVALIDASI) ═══\n{effective_session_context}\n"
-        f"═══ CATATAN OBSIDIAN & ASOSIASI GRAF ═══\n{context if context else '(Tidak ada catatan terkait.)'}\n"
+        "═══ CATATAN OBSIDIAN & ASOSIASI GRAF ═══\n"
+        f"{context if context else '(Tidak digunakan untuk hitungan umum.)' if general_calculation else '(Tidak ada catatan terkait.)'}\n"
         "══════════════════════════════════"
     )
 
     messages = [{'role': 'system', 'content': sys_prompt}]
-    if not vault_evidence_request:
+    if not isolated_context_request:
         messages.extend(chat_history[-4:] if chat_history else [])
     messages.append({'role': 'user', 'content': prompt})
 
@@ -207,7 +298,7 @@ def run_bot_reasoner(
         "prompt_preparation",
         prompt_started,
         prompt_chars=prompt_chars,
-        history_messages=0 if vault_evidence_request else min(len(chat_history), 4),
+        history_messages=0 if isolated_context_request else min(len(chat_history), 4),
     )
     inference_started = time.perf_counter()
     res = chat_with_optional_stream(
@@ -311,5 +402,13 @@ def run_bot_reasoner(
             if vault_lookup_request
             else res.message.content.strip()
         )
+        if general_calculation:
+            answer = _verify_displayed_arithmetic(prompt, answer)
+            answer = re.sub(
+                r"\s*\[Sumber:[^\]]+\]",
+                "",
+                answer,
+                flags=re.IGNORECASE,
+            ).strip()
     log_stage(logger, "reasoner", "total", total_started)
     return answer

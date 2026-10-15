@@ -26,20 +26,12 @@ PROFILE_DIR = os.path.join(config.DB_PATH, "gemini_browser_profile")
 GEMINI_URL = "https://gemini.google.com/app"
 
 _STOP_EVENT = threading.Event()
-_ACTIVE_SESSION: Optional['GeminiBrowserSession'] = None
 
 
 def request_stop_tutoring() -> None:
     """Memicu sinyal berhenti manual pada sesi les Carl & Gemini yang sedang berjalan."""
     _STOP_EVENT.set()
     print("\n🛑 [Carl Academy] Sinyal BERHENTI manual diterima dari pengguna!")
-    global _ACTIVE_SESSION
-    if _ACTIVE_SESSION:
-        try:
-            print("🛑 [Carl Academy] Menutup browser Gemini secara instan...")
-            _ACTIVE_SESSION.close()
-        except Exception as e:
-            print(f"⚠️ Gagal menutup browser aktif: {e}")
 
 
 def reset_stop_tutoring() -> None:
@@ -363,8 +355,6 @@ class GeminiBrowserSession:
 
     def start(self) -> Page:
         """Membuka browser dengan profil tersimpan."""
-        global _ACTIVE_SESSION
-        _ACTIVE_SESSION = self
         os.makedirs(PROFILE_DIR, exist_ok=True)
         self.playwright = sync_playwright().start()
 
@@ -770,9 +760,6 @@ class GeminiBrowserSession:
 
     def close(self):
         """Menutup browser dan menyimpan profil sesi."""
-        global _ACTIVE_SESSION
-        if _ACTIVE_SESSION is self:
-            _ACTIVE_SESSION = None
         try:
             if self.context:
                 self.context.close()
@@ -1015,6 +1002,14 @@ def _quick_append_lesson(
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
 
+        content = re.sub(
+            r"(?m)^type:\s*lesson-curriculum\s*mentor:\s*Google Gemini \(Cloud AI\)\s*$",
+            "type: lesson-curriculum\n"
+            "mentor: Google Gemini (Cloud AI)",
+            content,
+            count=1,
+        )
+
         # Update field 'updated:' di frontmatter (atau tambahkan jika belum ada)
         if "updated:" in content:
             content = re.sub(r'updated:\s*[^\n]+', f'updated: {now_str}', content, count=1)
@@ -1060,16 +1055,9 @@ def _build_default_curriculum(topic: str, created_str: str, total_turns: int, co
     )
 
 
-def save_or_update_curriculum_note(
-    clean_topic: str,
-    lessons: List[Dict[str, str]],
-    memory_manager = None,
-    fast_mode: bool = False
-) -> str:
+def save_or_update_curriculum_note(clean_topic: str, lessons: List[Dict[str, str]], memory_manager = None) -> str:
     """
     Menyimpan atau memperbarui kurikulum les Carl ke Obsidian Vault.
-    Jika fast_mode=True atau is_stop_requested()=True:
-      -> Langsung menyimpan versi terstruktur rapi tanpa blocking LLM merge / Qdrant index.
     Jika topik sudah pernah dipelajari (file sudah ada):
       -> Carl melakukan MERGE & REFINE secara cerdas (tidak menumpuk di bawah).
       -> Menjaga 1 YAML frontmatter di atas dengan created & updated.
@@ -1101,15 +1089,6 @@ def save_or_update_curriculum_note(
             curriculum_blocks.append(f"### 🧠 Carl #{carl_turn_num}: {entry['text'][:100]}\n")
 
     current_session_content = "\n".join(curriculum_blocks)
-
-    # ── JIKA FAST MODE / STOP MANUAL: Simpan instan tanpa blocking Ollama / Qdrant ──
-    if fast_mode or is_stop_requested():
-        print(f"⚡ [Carl Academy] Mode Cepat Aktif: Menyimpan kurikulum tanpa menunggu blocking LLM merge...")
-        default_content = _build_default_curriculum(clean_topic, now_str, total_turns, current_session_content)
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(default_content + "\n")
-        print(f"📁 [Carl Academy] Catatan kurikulum instan tersimpan: {filepath}")
-        return note_filename
 
     if os.path.exists(filepath):
         # Topik sudah ada: Lakukan merge cerdas, bukan append buta di bawah!
@@ -1156,19 +1135,37 @@ def save_or_update_curriculum_note(
                 messages=[{"role": "user", "content": merge_prompt}],
                 options={"temperature": 0.25}
             )
-            merged = res.message.content.strip()
-            if merged.startswith("```"):
-                merged = re.sub(r'^```\w*\n|```$', '', merged).strip()
 
-            if not merged.startswith("---"):
-                merged = (
-                    f"---\ntitle: \"Materi Les Privat Carl & Guru Gemini: {clean_topic}\"\n"
-                    f"created: {orig_created}\nupdated: {now_str}\ntype: lesson-curriculum\n"
-                    f"mentor: Google Gemini (Cloud AI)\nstudent: Carl (Local Second Brain)\n"
-                    f"topic: \"{clean_topic}\"\ntags:\n  - les-privat\n  - gemini-academy\n"
-                    f"  - knowledge-distillation\n  - second-brain-upgrade\n---\n\n"
-                    + merged
-                )
+            merged_body = res.message.content.strip()
+            if merged_body.startswith("```"):
+                merged_body = re.sub(r'^```\w*\n|```$', '', merged_body).strip()
+
+            # Buang frontmatter jika model masih menyertakannya.
+            merged_body = re.sub(
+                r"\A---[ \t]*\r?\n.*?^---[ \t]*(?:\r?\n)+",
+                "",
+                merged_body,
+                count=1,
+                flags=re.MULTILINE | re.DOTALL,
+            ).lstrip()
+
+            merged = (
+                f"---\n"
+                f"title: \"Materi Les Privat Carl & Guru Gemini: {clean_topic}\"\n"
+                f"created: {orig_created}\n"
+                f"updated: {now_str}\n"
+                f"type: lesson-curriculum\n"
+                f"mentor: Google Gemini (Cloud AI)\n"
+                f"student: Carl (Local Second Brain)\n"
+                f"topic: \"{clean_topic}\"\n"
+                f"tags:\n"
+                f"  - les-privat\n"
+                f"  - gemini-academy\n"
+                f"  - knowledge-distillation\n"
+                f"  - second-brain-upgrade\n"
+                f"---\n\n"
+                f"{merged_body}"
+            )
 
             # Sanitasi akhir: pastikan tidak ada kode yang lolos sebagai teks mentah
             merged = clean_gemini_response_text(merged)
@@ -1441,9 +1438,11 @@ def run_carl_tutoring_session(topic: str, turns: int = 2, memory_manager = None)
 
         # ─────────────────────────────────────────────────────────
         # DETEKSI TOPIK AKTUAL dari diskusi (bukan keyword awal)
+        # Carl mungkin drift ke topik berbeda. Gunakan Ollama untuk
+        # mengidentifikasi topik utama yang benar-benar dibahas.
         # ─────────────────────────────────────────────────────────
         actual_topic = clean_topic   # fallback ke topic awal
-        if not is_stop_requested() and len(lessons) >= 4:
+        if len(lessons) >= 4:
             sample = "\n".join([
                 f"[{l['role']}]: {l['text'][:200]}"
                 for l in lessons[1:9]   # skip opening, ambil inti diskusi
@@ -1497,17 +1496,17 @@ def run_carl_tutoring_session(topic: str, turns: int = 2, memory_manager = None)
             vault_filepath_actual = vault_filepath
 
         # ─────────────────────────────────────────────────────────
-        # DOKUMENTASI FINAL: Simpan kurikulum ke Obsidian
+        # DOKUMENTASI FINAL: Merge & Refine semua materi → Obsidian
         # ─────────────────────────────────────────────────────────
         total_turns = sum(1 for l in lessons if l["role"] == "Gemini")
-        first_gemini = next((l["text"] for l in lessons if l["role"] == "Gemini"), "")
+        print(f"\n🔀 [Carl Academy] Merapikan & menyempurnakan catatan final ({total_turns} putaran)...")
+        print(f"   📝 Topik catatan: \"{actual_topic}\"")
+        save_or_update_curriculum_note(actual_topic, lessons, memory_manager=memory_manager)
 
+        first_gemini = next((l["text"] for l in lessons if l["role"] == "Gemini"), "")
         if is_stop_requested():
-            print(f"\n🛑 [Carl Academy] Menghentikan sesi les dan melakukan finalisasi cepat ({total_turns} putaran)...")
-            session.close()
-            save_or_update_curriculum_note(actual_topic, lessons, memory_manager=None, fast_mode=True)
             summary = (
-                f"🛑 **Sesi Les Privat Berhasil Dihentikan Manual**\n\n"
+                f"🛑 **Sesi Les Privat Dihentikan Manual oleh Pengguna**\n\n"
                 f"🧠 **Carl berhasil mendistilasi {total_turns} putaran pembelajaran** tentang *\"{actual_topic}\"*.\n\n"
                 f"📁 **Seluruh materi tersimpan rapi di Obsidian:**\n"
                 f"`03-Resources/Materi Les Carl - {re.sub(chr(92) + r'/*?:\"<>|', '', actual_topic).strip()[:40]}.md`\n\n"
@@ -1516,46 +1515,40 @@ def run_carl_tutoring_session(topic: str, turns: int = 2, memory_manager = None)
                 f"{first_gemini[:600]}...\n\n"
                 f"*(Materi tetap aman di Obsidian dan memori Carl sudah di-update!)*"
             )
-            return summary
-
-        print(f"\n🔀 [Carl Academy] Merapikan & menyempurnakan catatan final ({total_turns} putaran)...")
-        print(f"   📝 Topik catatan: \"{actual_topic}\"")
-        save_or_update_curriculum_note(actual_topic, lessons, memory_manager=memory_manager)
-
-        summary = (
-            f"🎉 **Sesi Les Privat Carl bersama Guru Gemini Sukses Diselesaikan!**\n\n"
-            f"🧠 **Carl bertambah pintar** setelah **{total_turns} putaran pembelajaran** tentang *\"{actual_topic}\"*.\n\n"
-            f"📁 **Kurikulum lengkap tersimpan di Obsidian:**\n"
-            f"`03-Resources/Materi Les Carl - {re.sub(chr(92) + r'/*?:\"<>|', '', actual_topic).strip()[:40]}.md`\n\n"
-            f"---\n"
-            f"### 💡 Intisari Materi Awal dari Guru Gemini:\n"
-            f"{first_gemini[:600]}...\n\n"
-            f"*(Sekarang tanyakan apa saja tentang **{actual_topic}** ke Carl — dia sudah menguasai ilmu ini dari Gemini!)*"
-        )
+        else:
+            summary = (
+                f"🎉 **Sesi Les Privat Carl bersama Guru Gemini Sukses Diselesaikan!**\n\n"
+                f"🧠 **Carl bertambah pintar** setelah **{total_turns} putaran pembelajaran** tentang *\"{actual_topic}\"*.\n\n"
+                f"📁 **Kurikulum lengkap tersimpan di Obsidian:**\n"
+                f"`03-Resources/Materi Les Carl - {re.sub(chr(92) + r'/*?:\"<>|', '', actual_topic).strip()[:40]}.md`\n\n"
+                f"---\n"
+                f"### 💡 Intisari Materi Awal dari Guru Gemini:\n"
+                f"{first_gemini[:600]}...\n\n"
+                f"*(Sekarang tanyakan apa saja tentang **{actual_topic}** ke Carl — dia sudah menguasai ilmu ini dari Gemini!)*"
+            )
         return summary
 
     except Exception as e:
         err_msg = str(e)
         if is_browser_closed_error(e) or is_stop_requested():
-            session.close()
             total_turns = sum(1 for l in lessons if l.get("role") == "Gemini")
             if total_turns > 0:
-                print(f"\n⚠️ [Carl Academy] Browser ditutup / dihentikan manual. Menyimpan {total_turns} putaran materi secara cepat...")
+                print(f"\n⚠️ [Carl Academy] Browser ditutup / dihentikan manual. Menyimpan {total_turns} putaran materi...")
                 try:
                     save_topic = actual_topic if 'actual_topic' in locals() else clean_topic
-                    save_or_update_curriculum_note(save_topic, lessons, memory_manager=None, fast_mode=True)
+                    save_or_update_curriculum_note(save_topic, lessons, memory_manager=memory_manager)
                     first_gemini = next((l["text"] for l in lessons if l.get("role") == "Gemini"), "")
                     safe_slug_res = re.sub(r'[\\/*?:"<>|]', '', save_topic).strip()[:40]
                     return (
-                        f"🛑 **Sesi Les Privat Berhasil Dihentikan Manual** — seluruh materi tetap tersimpan aman!\n\n"
+                        f"⚠️ **Sesi les selesai karena browser ditutup / dihentikan** — seluruh materi tetap tersimpan aman!\n\n"
                         f"🧠 **{total_turns} putaran pembelajaran** tentang *\"{save_topic}\"* berhasil didistilasi.\n\n"
                         f"📁 **Kurikulum tersimpan di Obsidian:**\n"
                         f"`03-Resources/Materi Les Carl - {safe_slug_res}.md`\n\n"
-                        f"### 💡 Materi Terakhir dari Guru Gemini:\n{first_gemini[:500]}...\n\n"
+                        f"### 💡 Materi Terakhir dari Gemini:\n{first_gemini[:500]}...\n\n"
                         f"*(Catatan Obsidian Anda tetap utuh dan memori Carl sudah diperbarui)*"
                     )
                 except Exception as save_err:
-                    return f"🛑 Sesi les dihentikan. Catatan tersimpan di Obsidian: {save_err}"
+                    return f"⚠️ Sesi les dihentikan. Catatan tersimpan sebagian: {save_err}"
             else:
                 return f"ℹ️ Sesi les tentang *\"{clean_topic}\"* dihentikan sebelum Gemini sempat merespons. Tidak ada data yang rusak."
 

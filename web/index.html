@@ -762,7 +762,11 @@
       if (!row) return;
       const meta = row.querySelector(".bubble-meta");
       const bubble = row.querySelector(".bubble");
-      if (meta) meta.innerText = "🧠 Carl sedang merespons...";
+      if (meta) {
+        meta.innerText = stopRequested
+          ? "🧠 Carl sedang menghentikan sesi dan merapikan materi..."
+          : "🧠 Carl sedang merespons...";
+      }
       if (bubble) {
         const isPartialResponse = bubble.classList.contains("partial-response");
         bubble.className = "bubble partial-response";
@@ -776,6 +780,7 @@
     }
 
     const ACTIVE_CHAT_JOB_KEY = "carl-active-chat-job";
+    let stopRequested = false;
 
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
@@ -876,27 +881,40 @@
         localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
         hideTyping();
         sendBtn.disabled = false;
-        if (stopBtn) stopBtn.style.display = "none";
+        if (activeJob.isTutoring) stopRequested = false;
+        if (stopBtn) {
+          stopBtn.style.display = "none";
+          stopBtn.disabled = false;
+          stopBtn.innerText = "🛑 Stop Les";
+        }
       }
     }
 
     async function stopActiveSession() {
+      if (stopRequested) return;
+      stopRequested = true;
+
       const stopBtn = document.getElementById("stop-btn");
       if (stopBtn) {
         stopBtn.disabled = true;
         stopBtn.innerText = "⏳ Menghentikan...";
       }
+
+      const typingMeta = document.querySelector("#typing-row .bubble-meta");
+      if (typingMeta) {
+        typingMeta.innerText = "🧠 Carl sedang menghentikan sesi dan merapikan materi...";
+      }
+
       try {
         const resp = await fetch("/api/chat-stop", { method: "POST" });
         const data = await readApiJson(resp);
         if (!resp.ok) {
           throw new Error(data.detail || "Server Carl menolak permintaan berhenti.");
         }
-        appendMessage("ai", data.message || "🛑 Sinyal berhenti sudah dikirim ke sesi les Carl.");
       } catch (err) {
+        stopRequested = false;
         console.error("Gagal kirim stop:", err);
         appendMessage("ai", `❌ Tidak dapat menghentikan sesi les: ${err.message || "Koneksi ke server gagal."}`);
-      } finally {
         if (stopBtn) {
           stopBtn.disabled = false;
           stopBtn.innerText = "🛑 Stop Les";
@@ -955,7 +973,10 @@
         sendBtn.disabled = false;
       } finally {
         const activeJob = localStorage.getItem(ACTIVE_CHAT_JOB_KEY);
-        if (!activeJob) sendBtn.disabled = false;
+        if (!activeJob) {
+          sendBtn.disabled = false;
+          if (isTutoring) stopRequested = false;
+        }
         if (stopBtn) {
           if (!activeJob) {
             stopBtn.style.display = "none";

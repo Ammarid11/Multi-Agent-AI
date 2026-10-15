@@ -7,6 +7,7 @@ from tools import read_file, create_file, append_file, delete_file, relocate_con
 from agents.bot_file_manager import is_contextual_save_request
 from agents.bot_writer import is_named_note_summary_request
 from agents.bot_router_llm import classify_intent
+from agents.grounding import has_explicit_markdown_reference
 
 from memory.rules_engine import add_rule, delete_rule, format_rules_summary
 from observability import log_stage
@@ -56,7 +57,7 @@ HELP_MENU = r"""### 📖 Panduan Perintah (Slash Commands) Multi-Agent AI (Level
 """
 
 FAST_INTENT_PATTERNS = (
-    ("web", ("cari di internet", "cari di google", "cari di web", "berita tentang", "berita hari ini", "kabar hari ini", "apa berita", "info terkini", "browsing tentang", "kabar terbaru")),
+    ("web", ("cari di internet", "cari di google", "cari di web", "berita tentang", "berita hari ini", "kabar hari ini", "apa berita", "info terkini", "browsing tentang", "kabar terbaru", "cari perkembangan terbaru", "perkembangan terbaru tentang", "perkembangan terkini tentang")),
     ("coder", ("buatkan kode", "buat kode", "tulis kode", "script python", "fungsi python", "kodingan", "coding python", "bikin script", "debug kode")),
     ("think", ("analisis mendalam", "evaluasi kritis", "solusi strategis", "problem solving", "dilema antara")),
     ("file", ("buat catatan baru", "simpan ke catatan", "simpan di catatan baru", "catat di catatan baru", "simpan rangkuman", "catat rangkuman", "tulis file baru", "bikin catatan", "hapus catatan")),
@@ -371,6 +372,12 @@ class AgentRouter:
                 reply = self._route_by_intent("file", user_prompt)
             elif is_named_note_summary_request(user_prompt):
                 print("\n⚡ [Fast Router] Permintaan rangkuman diarahkan ke pemeriksaan sumber penuh.")
+                reply = self._route_by_intent("default", user_prompt)
+            elif (
+                has_explicit_markdown_reference(user_prompt)
+                and not _is_explicit_file_action(user_prompt)
+            ):
+                print("\n⚡ [Fast Router] Pertanyaan dengan sumber Vault eksplisit diarahkan ke Carl.")
                 reply = self._route_by_intent("default", user_prompt)
             else:
                 # 2. Stage 1: Fast Check (0 ms)
