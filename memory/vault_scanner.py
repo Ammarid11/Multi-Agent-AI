@@ -15,6 +15,7 @@ EXCLUDED_VAULT_DIRS = {
     "templates",
     "07-settings",
     "99-system",
+    "04-secure",
 }
 
 

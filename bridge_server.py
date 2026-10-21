@@ -8,6 +8,9 @@ melalui deteksi otomatis IP LAN, pembuatan QR Code pairing, dan Quick Mobile Mem
 import os
 import socket
 import io
+import json
+import secrets
+import time
 import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -66,19 +69,56 @@ def generate_qr_ascii(url: str) -> str:
     return f.getvalue()
 
 
-def get_bridge_info(port: int = 8000) -> Dict[str, Any]:
-    """Mengembalikan informasi jembatan koneksi mobile."""
+# ── Token akses untuk perangkat non-lokal ──
+_BRIDGE_TOKEN: Optional[str] = None
+_BRIDGE_EXPIRES: float = 0.0
+
+
+def new_bridge_token(ttl_hours: float = None) -> str:
+    global _BRIDGE_TOKEN, _BRIDGE_EXPIRES
+    _BRIDGE_TOKEN = secrets.token_urlsafe(24)
+    _BRIDGE_EXPIRES = time.time() + (ttl_hours or config.BRIDGE_TOKEN_TTL_HOURS) * 3600
+    return _BRIDGE_TOKEN
+
+
+def current_bridge_token(rotate: bool = False) -> str:
+    """Token aktif; dibuat baru jika belum ada, kedaluwarsa, atau rotate=True."""
+    if rotate or not _BRIDGE_TOKEN or time.time() >= _BRIDGE_EXPIRES:
+        return new_bridge_token()
+    return _BRIDGE_TOKEN
+
+
+def is_authorized(client_host: str, token: Optional[str]) -> bool:
+    """Klien loopback selalu diizinkan (dilindungi pemeriksaan Host/Origin di server); klien lain wajib token valid."""
+    if client_host in ("127.0.0.1", "::1", "localhost"):
+        return True
+    return bool(
+        _BRIDGE_TOKEN and token and time.time() < _BRIDGE_EXPIRES
+        and secrets.compare_digest(token, _BRIDGE_TOKEN)
+    )
+
+
+def get_bridge_info(port: int = 8000, rotate: bool = False) -> Dict[str, Any]:
+    """Mengembalikan informasi jembatan koneksi mobile (URL berisi token sekali-sesi, hanya bila mode LAN aktif)."""
     local_ip = get_local_ip()
-    mobile_url = f"http://{local_ip}:{port}"
     localhost_url = f"http://127.0.0.1:{port}"
-    
+    lan = bool(config.LAN_ENABLED)
+    mobile_url = f"http://{local_ip}:{port}/?t={current_bridge_token(rotate)}" if lan else localhost_url
+
     return {
-        "status": "active",
+        "status": "active" if lan else "local-only",
+        "lan_enabled": lan,
         "local_ip": local_ip,
         "port": port,
         "mobile_url": mobile_url,
         "localhost_url": localhost_url,
-        "instructions": "Pastikan smartphone Anda terhubung ke jaringan Wi-Fi yang sama dengan PC ini, lalu scan QR code atau buka URL di browser HP."
+        "expires_hours": config.BRIDGE_TOKEN_TTL_HOURS,
+        "instructions": (
+            "Pastikan smartphone terhubung ke Wi-Fi yang sama, lalu scan QR atau buka URL. URL berisi token berlaku "
+            f"{config.BRIDGE_TOKEN_TTL_HOURS:g} jam; jangan dibagikan."
+            if lan else
+            "Akses dari HP dinonaktifkan. Jalankan server dengan `python api_server.py --lan` (atau CARL_LAN=1) untuk mengaktifkannya."
+        ),
     }
 
 
@@ -94,6 +134,8 @@ def save_quick_memo(
     """
     if not content or not content.strip():
         return {"success": False, "error": "Konten memo tidak boleh kosong."}
+    if len(content) > config.MEMO_MAX_CHARS:
+        return {"success": False, "error": f"Memo melebihi {config.MEMO_MAX_CHARS} karakter."}
 
     now = datetime.datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -112,8 +154,8 @@ def save_quick_memo(
     inbox_dir = vault / "00-Inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
 
-    safe_filename = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip() + ".md"
-    file_path = inbox_dir / safe_filename
+    safe_stem = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip()[:80] or f"Quick Memo {date_code}"
+    file_path = inbox_dir / f"{safe_stem}.md"
 
     # Jika file sudah ada, tambahkan penanda waktu
     if file_path.exists():
@@ -126,13 +168,14 @@ def save_quick_memo(
             clean_tag = t.strip("#").strip()
             if clean_tag and clean_tag not in all_tags:
                 all_tags.append(clean_tag)
-    tag_str = ", ".join(f'"{t}"' for t in all_tags)
+    tag_str = ", ".join(json.dumps(t, ensure_ascii=False) for t in all_tags)
 
     note_body = f"""---
-title: "{title}"
+title: {json.dumps(title, ensure_ascii=False)}
 created: {timestamp_str}
-source: "{source}"
+source: {json.dumps(source, ensure_ascii=False)}
 tags: [{tag_str}]
+trust: user_mobile
 status: inbox
 ---
 
@@ -162,12 +205,19 @@ status: inbox
 def run_bridge_command(port: int = 8000) -> str:
     """Menampilkan informasi Mobile Bridge dan QR Code di chat/CLI."""
     info = get_bridge_info(port=port)
+    if not info["lan_enabled"]:
+        return (
+            "📱 **[Frontier H: Local Multi-Device Mobile Bridge]**\n"
+            "Akses dari perangkat lain **nonaktif** (hanya 127.0.0.1) demi keamanan.\n"
+            "Aktifkan dengan menjalankan `python api_server.py --lan` (atau set `CARL_LAN=1`). "
+            "Perangkat lain hanya bisa tanya-jawab dan memo, dan wajib memakai token pada URL/QR."
+        )
     ascii_qr = generate_qr_ascii(info["mobile_url"])
 
     lines = [
         "📱 **[Frontier H: Local Multi-Device Mobile Bridge]**",
         "Jembatan nirkabel lokal Carl Second Brain aktif!\n",
-        f"🔗 **URL Akses Smartphone:** `{info['mobile_url']}`",
+        f"🔗 **URL Akses Smartphone (berisi token, berlaku {info['expires_hours']:g} jam):** `{info['mobile_url']}`",
         f"💻 **URL Komputer Lokal:** `{info['localhost_url']}`",
         f"🌐 **IP Host PC:** `{info['local_ip']}`\n",
         "**Langkah Penggunaan:**",

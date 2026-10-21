@@ -26,13 +26,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import config
 from config import DB_PATH, VAULT_PATH
 from tools.vault_temporal import generate_daily_briefing
 from tools.vault_backup import backup_vault, show_windows_toast
+from core import vault_io
 
 _SCHEDULER_THREAD: Optional[threading.Thread] = None
 _RUNNING = False
-_BRIEFING_STATE_PATH = Path(DB_PATH) / ".scheduler_state.json"
+_BRIEFING_STATE_PATH = Path(config.state_file(".scheduler_state.json"))
 _SCHEDULER_STATE_LOCK = threading.Lock()
 
 
@@ -154,8 +156,7 @@ def trigger_weekly_review() -> str:
             f"- [ ] Prioritas strategis apa yang harus dieksekusi minggu depan?\n"
         )
 
-        with open(review_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        vault_io.atomic_write(review_path, content)   # snapshot: isian refleksi sebelumnya bisa di-/undo
 
         show_windows_toast(
             "📊 Weekly Review Siap!",

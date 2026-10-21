@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import config
+from core import vault_io
+from memory.vault_scanner import is_indexable_note
 
 
 # ==============================================================================
@@ -41,7 +43,7 @@ def scan_vault_deadlines(vault_path: str = config.VAULT_PATH) -> List[Dict[str, 
 
     for md_file in vault.rglob("*.md"):
         rel_str = str(md_file.relative_to(vault)).replace("\\", "/")
-        if any(rel_str.startswith(skip) for skip in [".", "Templates", "99-System", ".trash"]):
+        if not is_indexable_note(str(md_file), str(vault)):
             continue
 
         try:
@@ -139,7 +141,7 @@ def export_vault_calendar_ics(
     ics_content = "\r\n".join(ics_lines) + "\r\n"
 
     try:
-        ics_file.write_text(ics_content, encoding="utf-8")
+        vault_io.atomic_write(ics_file, ics_content)
         return {
             "success": True,
             "file_path": str(ics_file),
@@ -277,7 +279,7 @@ status: literature-review
 """
 
     try:
-        file_path.write_text(note_body, encoding="utf-8")
+        vault_io.atomic_write(file_path, note_body)
         return {
             "success": True,
             "title": p["title"],

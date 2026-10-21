@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import config
+from memory.vault_scanner import is_indexable_note
 from tools.tool_append import find_file_in_vault
 from memory.graph_retriever import extract_wikilinks
 
@@ -45,7 +46,7 @@ def _extract_domain_notes(vault_path: str) -> Dict[str, List[Dict[str, Any]]]:
     for md_file in vault.rglob("*.md"):
         # Abaikan template dan trash
         rel_str = str(md_file.relative_to(vault)).replace("\\", "/")
-        if any(rel_str.startswith(skip) for skip in [".", "Templates", "99-System", ".trash"]):
+        if not is_indexable_note(str(md_file), str(vault)):
             continue
 
         try:

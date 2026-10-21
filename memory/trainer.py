@@ -12,6 +12,7 @@ import glob
 from datetime import datetime
 from typing import List, Dict
 import config
+from memory.vault_scanner import is_indexable_note
 
 TRAINING_OUTPUT_DIR = os.path.join(config.VAULT_PATH, "07-Settings", "training")
 DATASET_FILE = os.path.join(TRAINING_OUTPUT_DIR, "vault_training_dataset.jsonl")
@@ -22,8 +23,7 @@ def _extract_best_notes(max_notes: int = 25) -> List[Dict]:
     """Ekstrak catatan terbaik dari Vault berdasarkan panjang & kualitas konten."""
     notes = []
     for filepath in glob.glob(os.path.join(config.VAULT_PATH, "**", "*.md"), recursive=True):
-        norm = filepath.replace("\\", "/").lower()
-        if "07-settings" in norm or os.path.basename(filepath).startswith((".", "_")):
+        if not is_indexable_note(filepath, config.VAULT_PATH):
             continue
         try:
             with open(filepath, 'r', encoding='utf-8') as f:

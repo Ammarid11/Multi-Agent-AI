@@ -1,35 +1,46 @@
 # tools/tool_relocate.py
 import os
 from typing import Optional
-from tools.tool_append import find_file_in_vault, append_file
+
+from core import vault_io
+from tools.tool_append import append_file
 
 
 def relocate_content(source_file: str, target_file: str, content_snippet: str, target_section: Optional[str] = None) -> str:
-    """Memindahkan cuplikan teks dari satu file ke file lain di Vault."""
-    src_path = find_file_in_vault(source_file)
-    if not os.path.exists(src_path):
+    """Memindahkan cuplikan teks antar catatan: SIMPAN dulu -> VERIFIKASI -> baru ubah sumber."""
+    src_path, error = vault_io.resolve_write_path(source_file)
+    if error:
+        return f"❌ File asal: {error}"
+    if not src_path.exists():
         return f"❌ File asal '{source_file}' tidak ditemukan!"
+    tgt_path, error = vault_io.resolve_write_path(target_file)
+    if error:
+        return f"❌ File tujuan: {error}"
 
     try:
-        with open(src_path, 'r', encoding='utf-8') as f:
-            src_text = f.read()
+        src_text = src_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        snippet = content_snippet.strip().replace("\r\n", "\n")
+        if not snippet:
+            return "❌ Cuplikan kosong; tidak ada yang dipindahkan."
+        if src_text.count(snippet) != 1:
+            return "❌ Cuplikan harus muncul tepat satu kali di file asal; tidak ada yang diubah."
 
-        snippet = content_snippet.strip()
-        target_str = None
-        if snippet in src_text:
-            target_str = snippet
-        elif snippet.replace('\r\n', '\n') in src_text.replace('\r\n', '\n'):
-            target_str = snippet.replace('\r\n', '\n')
-            src_text = src_text.replace('\r\n', '\n')
+        before = tgt_path.read_text(encoding="utf-8") if tgt_path.exists() else None
 
-        if target_str:
-            target_name = os.path.splitext(os.path.basename(target_file))[0]
-            new_src_text = src_text.replace(target_str, f"*(Dipindahkan ke [[{target_name}]])*")
-            with open(src_path, 'w', encoding='utf-8') as f:
-                f.write(new_src_text)
+        # 1) simpan di tujuan
+        result = append_file(str(tgt_path.relative_to(vault_io.vault_root()).as_posix()), snippet, section=target_section)
 
-            append_file(target_file, content_snippet, section=target_section)
-            return f"🚚 Berhasil memindahkan materi ke '{os.path.basename(target_file)}'!"
-        return "❌ Teks yang ingin dipindahkan tidak ditemukan di file asal."
+        # 2) verifikasi tujuan benar-benar berubah/berisi cuplikan
+        if not tgt_path.exists():
+            return f"❌ Gagal menyimpan ke tujuan; file asal tidak diubah.\n{result}"
+        after = tgt_path.read_text(encoding="utf-8")
+        changed = (after != before)
+        if not changed or (target_section is None and snippet not in after.replace("\r\n", "\n")):
+            return f"❌ Verifikasi tujuan gagal; file asal tidak diubah.\n{result}"
+
+        # 3) baru ubah sumber (atomik + snapshot, bisa /undo)
+        target_name = os.path.splitext(os.path.basename(str(tgt_path)))[0]
+        vault_io.atomic_write(src_path, src_text.replace(snippet, f"*(Dipindahkan ke [[{target_name}]])*"))
+        return f"🚚 Berhasil memindahkan materi ke '{os.path.basename(str(tgt_path))}'!"
     except Exception as e:
         return f"❌ Gagal memindahkan teks: {str(e)}"

@@ -27,26 +27,58 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import config
 from config import VAULT_PATH, OLLAMA_HOST
+from core import vault_io
+
+_ALLOWED_SUFFIXES = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
+
+
+def _allowed_roots() -> List[Path]:
+    roots = [Path(VAULT_PATH), Path(config.WORKSPACE_PATH), *(Path(d) for d in config.INPUT_ALLOWED_DIRS)]
+    resolved = []
+    for root in roots:
+        try:
+            resolved.append(root.resolve())
+        except OSError:
+            continue
+    return resolved
+
+
+def _is_allowed_input(path: Path) -> bool:
+    """Hanya berkas PDF/gambar di dalam Vault, folder kerja, atau CARL_INPUT_DIRS; tidak boleh di 04-Secure."""
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    if resolved.suffix.lower() not in _ALLOWED_SUFFIXES or not resolved.is_file():
+        return False
+    if vault_io.is_blocked_path(resolved):
+        return False
+    return any(vault_io.is_inside(root, resolved) for root in _allowed_roots())
 
 
 def _find_file_path(filename: str) -> Optional[Path]:
-    """Mencari lokasi berkas fisik jika path relatif diberikan."""
+    """Mencari berkas yang DIIZINKAN. Path di luar folder yang diizinkan diperlakukan sebagai tidak ditemukan."""
     clean = filename.strip(' "\'')
+    if not clean:
+        return None
     p = Path(clean)
-    if p.exists():
+    if p.exists() and _is_allowed_input(p):
         return p
 
-    # Cari di 00-Inbox
     inbox_p = Path(VAULT_PATH) / "00-Inbox" / p.name
-    if inbox_p.exists():
+    if inbox_p.exists() and _is_allowed_input(inbox_p):
         return inbox_p
 
-    # Cari rekursif di seluruh Vault
-    for root, _, files in os.walk(VAULT_PATH):
-        if p.name.lower() in [f.lower() for f in files]:
-            return Path(root) / p.name
-
+    wanted = p.name.lower()
+    for root, dirs, files in os.walk(VAULT_PATH):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d.casefold() not in vault_io.BLOCKED_DIRS]
+        for f in files:
+            if f.lower() == wanted:
+                candidate = Path(root) / f
+                if _is_allowed_input(candidate):
+                    return candidate
     return None
 
 
@@ -72,7 +104,7 @@ def ingest_pdf(pdf_path_str: str, folder_target: str = "03-Resources") -> Dict[s
     """
     file_path = _find_file_path(pdf_path_str)
     if not file_path or not file_path.exists():
-        return {"success": False, "error": f"Berkas PDF tidak ditemukan: '{pdf_path_str}'"}
+        return {"success": False, "error": f"Berkas PDF tidak ditemukan atau berada di luar folder yang diizinkan (Vault, folder kerja, CARL_INPUT_DIRS): '{pdf_path_str}'"}
 
     try:
         from pypdf import PdfReader
@@ -121,8 +153,7 @@ def ingest_pdf(pdf_path_str: str, folder_target: str = "03-Resources") -> Dict[s
             + "\n\n".join(extracted_sections[:30])  # Maksimal 30 halaman awal
         )
 
-        with open(note_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        vault_io.atomic_write(note_path, content)
 
         msg = (
             f"📑 **Ekstraksi Dokumen PDF Sukses!**\n\n"
@@ -151,7 +182,7 @@ def analyze_image(image_path_str: str, user_prompt: str = "") -> Dict[str, Any]:
     """
     file_path = _find_file_path(image_path_str)
     if not file_path or not file_path.exists():
-        return {"success": False, "error": f"Berkas gambar tidak ditemukan: '{image_path_str}'"}
+        return {"success": False, "error": f"Berkas gambar tidak ditemukan atau berada di luar folder yang diizinkan (Vault, folder kerja, CARL_INPUT_DIRS): '{image_path_str}'"}
 
     try:
         # 1. Baca metadata gambar dengan Pillow
@@ -228,8 +259,7 @@ def analyze_image(image_path_str: str, user_prompt: str = "") -> Dict[str, Any]:
             f"{desc_body}\n"
         )
 
-        with open(note_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        vault_io.atomic_write(note_path, content)
 
         msg = (
             f"👁️ **Analisis Visual Berhasil!**\n\n"

@@ -1,0 +1,17 @@
+{
+    "sonarlint.rules": {
+        "python:S3776": {
+            "level": "off"
+        },
+        "python:S1172": {
+            "level": "off"
+        },
+        "python:S1186": {
+            "level": "off"
+        }
+    },
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportGeneralTypeIssues": "none",
+        "reportOptionalMemberAccess": "none"
+    }
+}

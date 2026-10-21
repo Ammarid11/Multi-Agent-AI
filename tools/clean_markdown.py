@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional, Tuple
 import ollama
 import config
+from core import vault_io
 
 
 def _resolve_markdown_file(filename: str) -> Tuple[Optional[str], Optional[str]]:
@@ -57,14 +58,27 @@ def _resolve_markdown_file(filename: str) -> Tuple[Optional[str], Optional[str]]
 
 
 def _write_and_verify(filepath: str, content: str) -> None:
-    """Write the formatted note and verify the persisted bytes decode to the expected text."""
-    expected = content.rstrip() + "\n"
-    with open(filepath, "w", encoding="utf-8", newline="") as f:
-        f.write(expected)
-    with open(filepath, "r", encoding="utf-8", newline="") as f:
-        actual = f.read()
-    if actual != expected:
-        raise OSError("Verifikasi setelah penulisan gagal; isi file di disk tidak cocok dengan hasil.")
+    """Tulis atomik (snapshot versi lama, bisa /undo) lalu verifikasi byte hasil tulis."""
+    vault_io.atomic_write(filepath, content.rstrip() + "\n")
+
+
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)")
+_NUMBER_RE = re.compile(r"(?<![\w.])\d{2,}(?:[.,]\d+)?(?![\w])")
+
+
+def _content_preserved(original: str, cleaned: str) -> Optional[str]:
+    """Kembalikan alasan penolakan bila hasil LLM menghilangkan tautan, blok kode, atau angka dari catatan asli."""
+    orig_links = {m.strip().casefold() for m in _WIKILINK_RE.findall(original)}
+    new_links = {m.strip().casefold() for m in _WIKILINK_RE.findall(cleaned)}
+    if orig_links - new_links:
+        return f"wikilink hilang: {', '.join(sorted(orig_links - new_links)[:3])}"
+    if original.count("```") > cleaned.count("```"):
+        return "blok kode berkurang"
+    orig_body = re.sub(r"\A---.*?\n---\s*", "", original, count=1, flags=re.DOTALL)
+    missing = set(_NUMBER_RE.findall(orig_body)) - set(_NUMBER_RE.findall(cleaned))
+    if missing:
+        return f"angka hilang: {', '.join(sorted(missing)[:3])}"
+    return None
 
 
 def _clean_katex_and_dom_artifacts(text: str) -> str:
@@ -225,8 +239,11 @@ def clean_and_refactor_file(filename: str) -> str:
         cleaned = re.sub(r'tags:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)', _sanitize_tags, cleaned)
 
         # Validasi Keselamatan: Batalkan penimpaan jika respons AI terpotong drastis
-        if len(content.strip()) > 150 and len(cleaned) < (len(content.strip()) * 0.4):
-            return f"⚠️ Pembatalan aman: Hasil dari AI terdeteksi terpotong (<40% panjang asli) pada '{os.path.basename(filepath)}'. Catatan asli tetap aman."
+        if len(content.strip()) > 150 and len(cleaned) < (len(content.strip()) * 0.7):
+            return f"⚠️ Pembatalan aman: Hasil dari AI terdeteksi terpotong (<70% panjang asli) pada '{os.path.basename(filepath)}'. Catatan asli tetap aman."
+        reason = _content_preserved(content, cleaned)
+        if reason:
+            return f"⚠️ Pembatalan aman: hasil AI mengubah isi catatan ({reason}) pada '{os.path.basename(filepath)}'. Catatan asli tetap aman."
 
         _write_and_verify(filepath, cleaned)
 

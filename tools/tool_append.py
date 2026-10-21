@@ -3,8 +3,10 @@ import os
 import glob
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List
 import config
+from core import vault_io
 
 GENERIC_HEADERS = {"profil", "daftar profil", "profil orang lain", "catatan terkait", "resource", "resources"}
 OVERWRITE_SINGLE_FIELDS = {
@@ -22,6 +24,11 @@ def find_file_in_vault(filename: str) -> str:
         clean += '.md'
 
     direct_path = os.path.join(config.VAULT_PATH, clean)
+    # Guard: path di luar Vault (../, absolut) tidak pernah dikembalikan; kembalikan path tak ada di dalam Vault.
+    if not vault_io.is_inside(vault_io.vault_root(), Path(direct_path).resolve()):
+        return os.path.join(config.VAULT_PATH, "__blocked__", os.path.basename(clean))
+    if vault_io.is_blocked_path(direct_path):
+        return os.path.join(config.VAULT_PATH, "__blocked__", os.path.basename(clean))
     if os.path.exists(direct_path):
         return direct_path
 
@@ -176,32 +183,36 @@ def _update_existing_section(lines: List[str], target_idx: int, content: str) ->
 
 
 def append_file(filename: str, content: str, section: Optional[str] = None) -> str:
-    """Menambahkan atau memperbarui catatan di Vault Obsidian."""
-    filepath = find_file_in_vault(filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    """Menambahkan atau memperbarui catatan di Vault Obsidian (tulis atomik + snapshot, tanpa fuzzy match)."""
+    path, error = vault_io.resolve_write_path(filename)
+    if error:
+        return f"❌ {error}"
+    filepath = str(path)
 
     if not os.path.exists(filepath):
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         header = f"---\ncreated: {now_str}\n---\n\n"
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(header + content.strip() + "\n")
+        try:
+            vault_io.atomic_write(path, header + content.strip() + "\n")
+        except (OSError, ValueError) as e:
+            return f"❌ Gagal membuat file: {e}"
         return f"📝 File '{os.path.basename(filepath)}' berhasil dibuat di '{os.path.relpath(filepath, config.VAULT_PATH)}'!"
 
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        with vault_io.WRITE_LOCK:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
 
-        if not section:
-            lines.append(f"\n{content.strip()}\n")
-        else:
-            target_idx = _find_section_index(lines, section)
-            if target_idx == -1:
-                lines = _append_new_section(lines, section, content)
+            if not section:
+                lines.append(f"\n{content.strip()}\n")
             else:
-                lines = _update_existing_section(lines, target_idx, content)
+                target_idx = _find_section_index(lines, section)
+                if target_idx == -1:
+                    lines = _append_new_section(lines, section, content)
+                else:
+                    lines = _update_existing_section(lines, target_idx, content)
 
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.writelines(lines)
+            vault_io.atomic_write(path, "".join(lines))
 
         return f"✅ Berhasil memperbarui data di '{os.path.relpath(filepath, config.VAULT_PATH)}'!"
     except Exception as e:

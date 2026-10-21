@@ -1,16 +1,24 @@
-import os
+import re
+from pathlib import Path
+
+import config
+
+
+def _workspace() -> Path:
+    return Path(config.WORKSPACE_PATH).resolve()
 
 
 def create_python_file(file_name: str, code_content: str) -> str:
-    """Membuat atau menulis file Python (.py) baru dengan isi kode yang diberikan.
+    """Membuat file Python (.py) baru di folder kerja Carl (bukan di path sembarang).
     Gunakan tool ini saat user meminta untuk menyimpan atau membuat script/tool Python.
     """
     try:
-        # 1. Pastikan nama file berakhiran .py
-        if not file_name.endswith('.py'):
-            file_name += '.py'
-            
-        # 2. Bersihkan tag markdown ```python ... ``` jika AI tidak sengaja menyertakannya
+        name = Path(str(file_name).replace("\\", "/")).name          # buang semua komponen direktori
+        if not name.endswith(".py"):
+            name += ".py"
+        if not re.fullmatch(r"[\w\-. ]{1,80}\.py", name):
+            return "Gagal membuat file Python: nama berkas tidak valid."
+
         cleaned_code = code_content.strip()
         if cleaned_code.startswith("```python"):
             cleaned_code = cleaned_code[9:]
@@ -20,10 +28,15 @@ def create_python_file(file_name: str, code_content: str) -> str:
             cleaned_code = cleaned_code[:-3]
         cleaned_code = cleaned_code.strip()
 
-        # 3. Tulis kode ke file
-        with open(file_name, "w", encoding="utf-8") as f:
-            f.write(cleaned_code)
+        workspace = _workspace()
+        workspace.mkdir(parents=True, exist_ok=True)
+        target = (workspace / name).resolve()
+        if workspace not in target.parents:
+            return "Gagal membuat file Python: path di luar folder kerja."
+        if target.exists():
+            return f"File '{name}' sudah ada di folder kerja; gunakan nama lain agar tidak menimpa."
 
-        return f"Berhasil membuat file Python di '{file_name}'."
+        target.write_text(cleaned_code, encoding="utf-8")
+        return f"Berhasil membuat file Python di '{target}'."
     except Exception as e:
         return f"Gagal membuat file Python: {str(e)}"

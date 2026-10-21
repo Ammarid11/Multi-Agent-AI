@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import config
+from core import vault_io
 
 
 def find_vault_file_candidates(filename: str) -> list[str]:
@@ -64,6 +65,8 @@ def read_file(filename: str) -> str:
 
     vault_root = Path(config.VAULT_PATH).resolve()
     filepath = vault_root / Path(candidates[0])
+    if vault_io.is_blocked_path(filepath):
+        return "❌ Catatan di 04-Secure hanya dapat dibaca lewat `/reveal` dengan brankas terbuka."
     try:
         with filepath.open("r", encoding="utf-8") as file:
             return f"📄 **Isi File '{filepath.name}':**\n\n{file.read()}"

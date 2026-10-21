@@ -13,7 +13,8 @@ from typing import List, Dict, Tuple
 import ollama
 import config
 
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", ".session_history.json")
+LEGACY_HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", ".session_history.json")
+HISTORY_FILE = config.state_file(".session_history.json")   # tanpa migrasi: berkas lama bisa memuat ringkasan berisi rahasia
 SUMMARIZE_THRESHOLD = 8   # Ringkas jika percakapan mencapai 8 giliran
 KEEP_RECENT = 4           # Pertahankan 4 pesan terbaru setelah diringkas
 MAX_AGE_SECONDS = 48 * 3600  # 48 Jam
@@ -65,8 +66,9 @@ def _save_persisted_summary(summary_text: str) -> bool:
 def clear_session_history() -> None:
     """Hapus riwayat sesi untuk memulai sesi baru yang bersih."""
     try:
-        if os.path.exists(HISTORY_FILE):
-            os.remove(HISTORY_FILE)
+        for path in (HISTORY_FILE, LEGACY_HISTORY_FILE):
+            if os.path.exists(path):
+                os.remove(path)
     except Exception:
         logger.exception("Unable to clear persisted session history.")
         raise
@@ -108,7 +110,13 @@ def _summarize_batch(messages: List[Dict], user_name: str = "Pengguna") -> str:
 
 
 def load_initial_session_summaries() -> List[str]:
-    """Inisialisasi memori sesi dari disk saat aplikasi start."""
+    """Inisialisasi memori sesi dari disk saat aplikasi start. Berkas riwayat lama (lokasi lama) dibuang sekali."""
+    try:
+        if os.path.exists(LEGACY_HISTORY_FILE):
+            os.remove(LEGACY_HISTORY_FILE)
+            print("🧹 [Session Memory] Berkas riwayat lama (.session_history.json) dibersihkan demi privasi.")
+    except Exception:
+        logger.exception("Unable to remove the legacy session history file.")
     return _load_persisted_summaries()
 
 
@@ -146,10 +154,13 @@ def manage_history(
 def summarize_and_persist_history(
     messages: List[Dict],
     user_name: str = "Pengguna",
+    persist: bool = True,
 ) -> str:
-    """Summarize and persist a history snapshot for background execution."""
+    """Summarize (and optionally persist) a history snapshot for background execution."""
     summary = _summarize_batch(messages, user_name=user_name)
-    if not summary or not _save_persisted_summary(summary):
+    if not summary:
+        return ""
+    if persist and not _save_persisted_summary(summary):
         return ""
     return summary
 
@@ -157,6 +168,7 @@ def summarize_and_persist_history(
 def submit_history_summary(
     messages: List[Dict],
     user_name: str = "Pengguna",
+    persist: bool = True,
 ) -> Future[str]:
     """Schedule a stable history snapshot for summarization."""
     snapshot = [message.copy() for message in messages]
@@ -164,6 +176,7 @@ def submit_history_summary(
         summarize_and_persist_history,
         snapshot,
         user_name,
+        persist,
     )
 
 

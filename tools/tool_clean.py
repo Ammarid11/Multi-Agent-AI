@@ -4,7 +4,8 @@ import glob
 import re
 from typing import Optional
 import config
-from tools.clean_folder import merge_and_clean_folders
+from core.confirm import request_confirmation, confirmation_hint
+from tools.clean_folder import merge_and_clean_folders, plan_folder_merges
 from tools.clean_markdown import clean_and_refactor_file
 from tools.vault_indexer import generate_or_get_vault_map
 
@@ -78,27 +79,42 @@ def _cleanup_details(warnings: list[str], failures: list[str]) -> str:
     return "\n\nPerlu perhatian:\n" + "\n".join(details)
 
 
-def clean_all_vault_files() -> str:
-    """Membersihkan struktur folder dan merapikan catatan mentah di Inbox secara aman."""
-    print("⏳ Menata struktur folder non-standar...")
-    folder_logs = merge_and_clean_folders()
+def clean_all_vault_files(apply: bool = False) -> str:
+    """Membersihkan struktur folder & merapikan Inbox. Pemindahan folder: dry-run dulu, lalu backup otomatis saat dikonfirmasi."""
+    plan = plan_folder_merges()
+    if plan and not apply:
+        code = request_confirmation("clean_all", {}, "Rapikan struktur folder Vault")
+        preview = "\n".join(f"- `{os.path.relpath(s, config.VAULT_PATH)}` → `{os.path.relpath(d, config.VAULT_PATH)}`".replace("\\", "/") for s, d, _ in plan[:15])
+        more = f"\n- …dan {len(plan) - 15} berkas lainnya" if len(plan) > 15 else ""
+        return (
+            f"📋 **Rencana perapihan ({len(plan)} berkas akan dipindahkan; struktur subfolder dipertahankan):**\n{preview}{more}\n\n"
+            f"Backup `.zip` otomatis dibuat sebelum eksekusi. {confirmation_hint(code)}"
+        )
+
+    folder_logs: list = []
+    if plan and apply:
+        from tools.vault_backup import backup_vault
+        backup = backup_vault(notify=False)
+        if not backup.get("success"):
+            return f"❌ Backup sebelum perapihan gagal ({backup.get('error')}); tidak ada folder yang dipindahkan."
+        print("⏳ Menata struktur folder non-standar...")
+        folder_logs = merge_and_clean_folders(apply=True)
 
     print("⏳ Memperbarui Master Index Vault...")
     generate_or_get_vault_map()
 
-    # Fokuskan audit format otomatis pada catatan di 00-Inbox (catatan baru/mentah)
     inbox_pattern = os.path.join(config.VAULT_PATH, "00-Inbox", "**", "*.md")
     processed, succeeded, warnings, failures = _clean_markdown_in_path(inbox_pattern)
 
-    logs_summary = f" ({len(folder_logs)} folder diselaraskan)" if folder_logs else ""
+    logs_summary = f" ({len(folder_logs)} berkas dipindahkan)" if folder_logs else ""
     return (
         f"🎉 **Pembersihan Struktur Vault Selesai!**{logs_summary}\n"
-        f"- 📁 Folder telah diselaraskan ke standar PARA (00–07).\n"
+        f"- 📁 Folder diselaraskan ke standar PARA (00–07).\n"
         f"- 📋 Master Index berhasil diperbarui.\n"
         f"- ✍️ Catatan Inbox diperiksa: {processed}; hasil tersimpan dan terverifikasi: {succeeded}; "
         f"peringatan: {len(warnings)}; gagal: {len(failures)}."
         f"{_cleanup_details(warnings, failures)}\n\n"
-        f"*(Tips: Gunakan `/clean <nama_folder>` untuk merapikan folder spesifik lainnya)*"
+        f"*(Tips: `/undo <nama>` mengembalikan versi sebelumnya; `/clean <nama_folder>` merapikan folder tertentu)*"
     )
 
 

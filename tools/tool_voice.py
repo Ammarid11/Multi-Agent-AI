@@ -98,7 +98,7 @@ def speak_text(text: str, voice: str = DEFAULT_VOICE, play_sound: bool = True) -
     # Buat direktori cache audio
     cache_dir = PROJECT_ROOT / "web" / "audio_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    audio_file = cache_dir / "carl_voice.mp3"
+    audio_file = cache_dir / "carl_voice_local.mp3"
 
     success = False
 

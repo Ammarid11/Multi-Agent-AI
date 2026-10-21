@@ -10,6 +10,7 @@ import glob
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import config
+from memory.vault_scanner import is_indexable_note
 from tools.tool_append import find_file_in_vault, append_file
 
 
@@ -20,8 +21,7 @@ def scan_deadlines_and_tasks() -> Dict[str, List[Dict[str, str]]]:
         return findings
 
     for filepath in glob.glob(os.path.join(config.VAULT_PATH, "**", "*.md"), recursive=True):
-        norm = filepath.replace("\\", "/").lower()
-        if "07-settings" in norm or os.path.basename(filepath).startswith((".", "_")):
+        if not is_indexable_note(filepath, config.VAULT_PATH):
             continue
 
         try:
@@ -66,7 +66,7 @@ def generate_daily_briefing(user_name: str = "Pengguna") -> str:
     recent_modified = []
     cutoff = (now - timedelta(hours=48)).timestamp()
     for filepath in glob.glob(os.path.join(config.VAULT_PATH, "**", "*.md"), recursive=True):
-        if "07-settings" not in filepath and not os.path.basename(filepath).startswith((".", "_")):
+        if is_indexable_note(filepath, config.VAULT_PATH):
             try:
                 if os.path.getmtime(filepath) > cutoff:
                     recent_modified.append(os.path.basename(filepath))

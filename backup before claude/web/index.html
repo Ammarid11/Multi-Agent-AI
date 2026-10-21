@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carl — Obsidian AI Sidecar</title>
+  <!-- Marked.js untuk Markdown rendering lokal via cdn dengan fallback lokal -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #1e1e24;
+      --bg-secondary: #16161a;
+      --bg-tertiary: #272730;
+      --bg-bubble-ai: #2b2b36;
+      --bg-bubble-user: #4c1d95;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #8b5cf6;
+      --accent-hover: #7c3aed;
+      --accent-light: #c4b5fd;
+      --border-color: #374151;
+      --success: #10b981;
+      --code-bg: #111827;
+      --radius: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-secondary);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Bar Header */
+    header {
+      background-color: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .title-group h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .title-group span {
+      font-size: 11px;
+      color: var(--accent-light);
+      background-color: rgba(139, 92, 246, 0.15);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .header-actions button {
+      background: none;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .header-actions button:hover {
+      background-color: var(--bg-tertiary);
+      color: var(--text-main);
+    }
+
+    /* Quick Action Pills */
+    .quick-bar {
+      display: flex;
+      gap: 6px;
+      padding: 8px 14px;
+      background-color: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      overflow-x: auto;
+      white-space: nowrap;
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE and Edge */
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+      cursor: grab;
+    }
+
+    .quick-bar:active {
+      cursor: grabbing;
+    }
+
+    .quick-bar::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    .pill-btn {
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 4px 10px;
+      border-radius: 14px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+
+    .pill-btn:hover {
+      background-color: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    /* Chat Messages Container */
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scrollbar-width: thin;
+    }
+
+    #chat-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    #chat-container::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+
+    .message-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 90%;
+      animation: fadeIn 0.25s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-row.user {
+      align-self: flex-end;
+    }
+
+    .message-row.ai {
+      align-self: flex-start;
+      max-width: 95%;
+    }
+
+    .bubble-meta {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .message-row.user .bubble-meta {
+      justify-content: flex-end;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      font-size: 13.5px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+
+    .bubble.partial-response {
+      white-space: pre-wrap;
+    }
+
+    .message-row.user .bubble {
+      background-color: var(--bg-bubble-user);
+      color: #ffffff;
+      border-bottom-right-radius: 2px;
+    }
+
+    .message-row.ai .bubble {
+      background-color: var(--bg-bubble-ai);
+      border: 1px solid var(--border-color);
+      border-bottom-left-radius: 2px;
+    }
+
+    /* Markdown inside AI Bubble */
+    .bubble h1, .bubble h2, .bubble h3, .bubble h4 {
+      color: var(--accent-light);
+      margin-top: 10px;
+      margin-bottom: 6px;
+    }
+    .bubble h1 { font-size: 16px; }
+    .bubble h2 { font-size: 15px; }
+    .bubble h3 { font-size: 14px; }
+    .bubble p { margin-bottom: 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble ul, .bubble ol {
+      margin-left: 18px;
+      margin-bottom: 8px;
+    }
+    .bubble li { margin-bottom: 4px; }
+    .bubble code {
+      background-color: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 12px;
+      color: #f472b6;
+    }
+    .bubble pre {
+      background-color: var(--code-bg);
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 8px 0;
+      border: 1px solid #1f2937;
+    }
+    .bubble pre code {
+      background-color: transparent;
+      padding: 0;
+      color: #e5e7eb;
+    }
+    .bubble blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 10px;
+      margin: 8px 0;
+      color: var(--text-muted);
+    }
+    .bubble a {
+      color: var(--accent-light);
+      text-decoration: none;
+    }
+    .bubble a:hover {
+      text-decoration: underline;
+    }
+    .bubble table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+      font-size: 12px;
+    }
+    .bubble th, .bubble td {
+      border: 1px solid var(--border-color);
+      padding: 6px 8px;
+      text-align: left;
+    }
+    .bubble th {
+      background-color: var(--bg-tertiary);
+      color: var(--accent-light);
+    }
+
+    /* Interactive Action Buttons inside Chat Bubble */
+    .heal-action-btn {
+      display: inline-flex !important;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: #ffffff !important;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      margin-top: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
+      text-decoration: none !important;
+    }
+    .heal-action-btn:hover {
+      background: linear-gradient(135deg, #9333ea, #6d28d9);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(139, 92, 246, 0.55);
+    }
+    .heal-action-btn:active {
+      transform: translateY(0);
+    }
+
+    /* Typing indicator */
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 12px;
+    }
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--text-muted);
+      animation: bounce 1.4s infinite ease-in-out both;
+    }
+    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
+    /* Bottom Input Bar */
+    footer {
+      background-color: var(--bg-primary);
+      border-top: 1px solid var(--border-color);
+      padding: 12px 14px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+
+    #user-input {
+      flex: 1;
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      color: var(--text-main);
+      padding: 10px 14px;
+      font-size: 13.5px;
+      font-family: inherit;
+      resize: none;
+      min-height: 44px;
+      max-height: 120px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #user-input:focus {
+      border-color: var(--accent);
+    }
+
+    #mic-btn {
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      color: var(--text-main);
+      width: 44px;
+      height: 44px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    #mic-btn:hover {
+      background-color: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    #mic-btn.recording {
+      background-color: #ef4444 !important;
+      border-color: #ef4444 !important;
+      color: #fff !important;
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    #mic-btn svg {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
+    }
+
+    .voice-icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      margin-left: 6px;
+      opacity: 0.7;
+      transition: all 0.2s;
+      vertical-align: middle;
+    }
+    .voice-icon-btn:hover {
+      opacity: 1;
+      transform: scale(1.2);
+    }
+
+    #send-btn {
+      background-color: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: #ffffff;
+      width: 44px;
+      height: 44px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s, transform 0.1s;
+      flex-shrink: 0;
+    }
+
+    #send-btn:hover {
+      background-color: var(--accent-hover);
+    }
+    #send-btn:active {
+      transform: scale(0.96);
+    }
+
+    #send-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    /* Tombol Stop Les Khusus (Hanya Muncul di Samping Form Saat Sesi Les Berlangsung) */
+    #stop-btn {
+      background-color: #ef4444;
+      border: 1px solid #dc2626;
+      border-radius: var(--radius);
+      color: #ffffff;
+      height: 44px;
+      padding: 0 16px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);
+      animation: pulse-stop 2s infinite;
+    }
+    #stop-btn:hover {
+      background-color: #dc2626;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.5);
+    }
+    #stop-btn:active {
+      transform: translateY(0);
+    }
+    #stop-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    @keyframes pulse-stop {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    }
+
+    /* Info Banner Modal */
+    #info-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(3px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      max-width: 480px;
+      width: 100%;
+      padding: 20px;
+    }
+    .modal-box h2 {
+      font-size: 16px;
+      color: var(--accent-light);
+      margin-bottom: 12px;
+    }
+    .modal-box p, .modal-box li {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+    .modal-box code {
+      color: var(--accent-light);
+      background: var(--bg-tertiary);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .modal-close-btn {
+      margin-top: 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-left">
+      <div class="status-dot" id="status-indicator" title="Status: Online"></div>
+      <div class="title-group">
+        <h1>Carl <span>Level 5 OS</span></h1>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button onclick="openMobileBridgeModal()" title="Koneksi HP / Mobile Bridge">📱 Mobile Bridge</button>
+      <button onclick="toggleModal(true)" title="Panduan Sematkan di Obsidian">ℹ️ Obsidian Sidecar</button>
+      <button onclick="resetChat()" title="Reset Sesi Obrolan">🧹 Reset</button>
+    </div>
+  </header>
+
+  <!-- Quick Action Pills -->
+  <div class="quick-bar">
+    <button class="pill-btn" onclick="sendQuick('/briefing')">🌅 Briefing</button>
+    <button class="pill-btn" onclick="promptTutoring()">🎓 Les Privat Gemini</button>
+    <button class="pill-btn" onclick="promptGeminiDialog()">🤖 Diskusi Gemini</button>
+    <button class="pill-btn" onclick="promptSimulate()">👥 Simulasi Swarm</button>
+    <button class="pill-btn" onclick="sendQuick('/train_adapter')">🧬 Latih Model</button>
+    <button class="pill-btn" onclick="window.open('/galaxy', '_blank')">🌌 Galaksi 3D</button>
+    <button class="pill-btn" onclick="sendQuick('/serendipity')">💡 Eureka / Serendipity</button>
+    <button class="pill-btn" onclick="sendQuick('/calendar export')">📅 Kalender .ics</button>
+    <button class="pill-btn" onclick="openQuickMemoModal()">📝 Memo Kilat</button>
+    <button class="pill-btn" onclick="promptBrowse()">🌐 Browse Web</button>
+    <button class="pill-btn" onclick="sendQuick('/eval')">🧪 Uji Akurasi</button>
+    <button class="pill-btn" onclick="promptCrypto()">🔐 Brankas Rahasia</button>
+    <button class="pill-btn" onclick="promptResearch()">📑 arXiv Riset</button>
+    <button class="pill-btn" onclick="promptVoice()">🎙️ Voice</button>
+    <button class="pill-btn" onclick="promptVision()">👁️ Vision / PDF</button>
+    <button class="pill-btn" onclick="promptCanvas()">🎨 Buat Canvas</button>
+    <button class="pill-btn" onclick="sendQuick('/backup')">🛡️ Backup</button>
+    <button class="pill-btn" onclick="sendQuick('/sentinel')">🔍 Sentinel</button>
+    <button class="pill-btn" onclick="sendQuick('/heal')">🩺 Heal Vault</button>
+    <button class="pill-btn" onclick="promptCouncil()">👥 Council</button>
+    <button class="pill-btn" onclick="promptGoal()">🎯 Goal</button>
+    <button class="pill-btn" onclick="sendQuick('/rules')">📜 SOP Rules</button>
+    <button class="pill-btn" onclick="sendQuick('/help')">❓ Bantuan</button>
+  </div>
+
+  <!-- Chat Messages -->
+  <main id="chat-container">
+    <div class="message-row ai">
+      <div class="bubble-meta">
+        🧠 Carl Second Brain AI
+        <button class="voice-icon-btn" onclick="playTTS(this)" title="Dengarkan Suara Carl">🔊</button>
+      </div>
+      <div class="bubble">
+        Halo! Saya <strong>Carl</strong>, asisten Second Brain Multi-Agent Anda (Level 5 Omniscient).<br><br>
+        Saya dilengkapi panca indra suara (Voice) dan penglihatan dokumen (Vision & PDF). Anda dapat bertanya, berbicara via mikrofon, melampirkan berkas, atau memanfaatkan tombol di atas.
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer Input -->
+  <footer>
+    <button id="mic-btn" onclick="toggleMicrophone()" title="Bicara via Mikrofon">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+    </button>
+    <textarea id="user-input" rows="1" placeholder="Ketik pesan atau bicara via mikrofon... (Shift+Enter untuk baris baru)"></textarea>
+    <button id="stop-btn" onclick="stopActiveSession()" title="Hentikan Sesi Les">🛑 Stop Les</button>
+    <button id="send-btn" onclick="sendMessage()" title="Kirim Pesan">
+      <svg viewBox="0 0 24 24">
+        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+      </svg>
+    </button>
+  </footer>
+
+  <!-- Modal Tutorial Obsidian Sidecar -->
+  <div id="info-modal" onclick="if(event.target===this) toggleModal(false)">
+    <div class="modal-box">
+      <h2>🔌 Cara Menyematkan Carl di Obsidian Sidecar</h2>
+      <p>Anda dapat membuka Carl langsung di panel samping jendela Obsidian tanpa perlu membuka browser terpisah:</p>
+      <ol style="margin-left: 20px;">
+        <li>Buka Obsidian &rarr; <code>Settings</code> &rarr; <code>Community plugins</code>.</li>
+        <li>Cari dan pasang plugin <strong>Custom Frames</strong>.</li>
+        <li>Buat frame baru:
+          <ul style="margin-left: 15px; margin-top: 4px;">
+            <li><strong>Frame ID:</strong> <code>carl-brain</code></li>
+            <li><strong>URL:</strong> <code>http://localhost:8000</code></li>
+            <li><strong>Open in:</strong> <code>Right Sidebar</code></li>
+          </ul>
+        </li>
+        <li>Klik ikon Carl di bilah kanan Obsidian untuk mengobrol santai kapan saja!</li>
+      </ol>
+      <button class="modal-close-btn" onclick="toggleModal(false)">Tutup Panduan</button>
+    </div>
+  </div>
+
+  <!-- Mobile Bridge Modal -->
+  <div id="mobile-bridge-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(4px); z-index:101; align-items:center; justify-content:center; padding:20px;">
+    <div class="modal-box" style="text-align: center; max-width: 440px;">
+      <h2>📱 Koneksi HP / Mobile Bridge</h2>
+      <p>Scan QR code di bawah ini menggunakan kamera HP Anda (pastikan terhubung ke Wi-Fi yang sama):</p>
+      
+      <div id="qr-container" style="background:#fff; padding:12px; border-radius:10px; display:inline-block; margin:12px 0;">
+        <pre id="qr-ascii" style="font-size:7px; line-height:7px; color:#000; font-family:monospace; margin:0; letter-spacing:-1px;"></pre>
+      </div>
+      
+      <div style="background:var(--bg-tertiary); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">
+        <span style="color:var(--text-muted);">Buka di Browser HP:</span><br>
+        <a id="mobile-url-link" href="#" target="_blank" style="color:var(--accent-light); font-weight:bold; font-size:14px; text-decoration:none;">Memuat...</a>
+      </div>
+
+      <button class="modal-close-btn" onclick="closeMobileBridgeModal()">Tutup</button>
+    </div>
+  </div>
+
+  <!-- Quick Memo Modal -->
+  <div id="quick-memo-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(4px); z-index:102; align-items:center; justify-content:center; padding:20px;">
+    <div class="modal-box" style="max-width: 460px;">
+      <h2>📝 Tangkap Memo Kilat ke Vault</h2>
+      <p>Tulis ide, memo suara, atau tugas cepat. Carl akan langsung menyimpannya ke <code>00-Inbox/</code> di Obsidian Vault.</p>
+      
+      <input type="text" id="memo-title" placeholder="Judul memo (opsional)" style="width:100%; box-sizing:border-box; background:var(--bg-secondary); border:1px solid var(--border-color); color:var(--text-main); padding:8px 12px; border-radius:6px; margin-bottom:10px; font-size:13px;">
+      
+      <textarea id="memo-content" rows="4" placeholder="Tuliskan ide atau catatan kilat Anda di sini..." style="width:100%; box-sizing:border-box; background:var(--bg-secondary); border:1px solid var(--border-color); color:var(--text-main); padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+      
+      <div style="display:flex; gap:10px;">
+        <button class="modal-close-btn" style="background:var(--bg-tertiary); color:var(--text-main);" onclick="closeQuickMemoModal()">Batal</button>
+        <button class="modal-close-btn" style="background:var(--accent);" onclick="submitQuickMemo()">💾 Simpan ke Inbox</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const chatContainer = document.getElementById("chat-container");
+    const userInput = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+
+    // Auto-resize input textarea
+    userInput.addEventListener("input", function() {
+      this.style.height = "auto";
+      this.style.height = Math.min(this.scrollHeight, 120) + "px";
+    });
+
+    // Enter to Send, Shift+Enter for new line
+    userInput.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    function scrollToBottom() {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function appendMessage(role, rawContent) {
+      const row = document.createElement("div");
+      row.className = `message-row ${role}`;
+
+      const meta = document.createElement("div");
+      meta.className = "bubble-meta";
+      if (role === "ai") {
+        meta.innerHTML = `🧠 Carl <button class="voice-icon-btn" onclick="playTTS(this)" title="Dengarkan Suara Carl">🔊</button>`;
+      } else {
+        meta.innerText = "Anda";
+      }
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+
+      if (role === "ai") {
+        if (typeof marked !== "undefined" && marked.parse) {
+          bubble.innerHTML = marked.parse(rawContent);
+        } else {
+          bubble.innerText = rawContent;
+        }
+
+        // Intersep link aksi /heal menjadi tombol live yang langsung mengeksekusi perintah
+        bubble.querySelectorAll('a[href="/heal"], a[href="#heal"]').forEach(a => {
+          a.className = "heal-action-btn";
+          a.onclick = (e) => {
+            e.preventDefault();
+            sendMessage('/heal');
+          };
+        });
+      } else {
+        bubble.innerText = rawContent;
+      }
+
+      row.appendChild(meta);
+      row.appendChild(bubble);
+      chatContainer.appendChild(row);
+      scrollToBottom();
+      return row;
+    }
+
+    function showTyping() {
+      const row = document.createElement("div");
+      row.id = "typing-row";
+      row.className = "message-row ai";
+
+      const meta = document.createElement("div");
+      meta.className = "bubble-meta";
+      meta.innerText = "🧠 Carl sedang berpikir...";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble typing-indicator";
+      bubble.innerHTML = `
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      `;
+
+      row.appendChild(meta);
+      row.appendChild(bubble);
+      chatContainer.appendChild(row);
+      scrollToBottom();
+    }
+
+    function hideTyping() {
+      const el = document.getElementById("typing-row");
+      if (el) el.remove();
+    }
+
+    function updateTyping(rawContent, previousContent = "") {
+      const row = document.getElementById("typing-row");
+      if (!row) return;
+      const meta = row.querySelector(".bubble-meta");
+      const bubble = row.querySelector(".bubble");
+      if (meta) {
+        meta.innerText = stopRequested
+          ? "🧠 Carl sedang menghentikan sesi dan merapikan materi..."
+          : "🧠 Carl sedang merespons...";
+      }
+      if (bubble) {
+        const isPartialResponse = bubble.classList.contains("partial-response");
+        bubble.className = "bubble partial-response";
+        if (isPartialResponse && rawContent.startsWith(previousContent)) {
+          bubble.append(document.createTextNode(rawContent.slice(previousContent.length)));
+        } else {
+          bubble.textContent = rawContent;
+        }
+      }
+      scrollToBottom();
+    }
+
+    const ACTIVE_CHAT_JOB_KEY = "carl-active-chat-job";
+    let stopRequested = false;
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function readApiJson(resp) {
+      const body = await resp.text();
+      try {
+        return body ? JSON.parse(body) : {};
+      } catch {
+        const contentType = resp.headers.get("content-type") || "unknown content type";
+        throw new Error(
+          `Server mengirim respons non-JSON (HTTP ${resp.status}, ${contentType}). ` +
+          "Periksa apakah server lokal atau deployment yang dibuka sudah menjalankan versi API yang sesuai."
+        );
+      }
+    }
+
+    async function pollChatJob(jobId) {
+      let retryDelay = 1000;
+      let pollDelay = 100;
+      let lastStatus = null;
+      let lastPartialReply = "";
+
+      while (true) {
+        try {
+          const resp = await fetch(`/api/chat-job?id=${encodeURIComponent(jobId)}`, {
+            cache: "no-store"
+          });
+
+          if ([429, 502, 503, 504].includes(resp.status)) {
+            await sleep(retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 15000);
+            continue;
+          }
+          const data = await readApiJson(resp);
+          if (!resp.ok) {
+            throw new Error(data.detail || "Tidak dapat memeriksa status tugas Carl.");
+          }
+
+          if (
+            typeof data.partial_reply === "string" &&
+            data.partial_reply &&
+            data.partial_reply !== lastPartialReply
+          ) {
+            const previousPartialReply = lastPartialReply;
+            lastPartialReply = data.partial_reply;
+            updateTyping(lastPartialReply, previousPartialReply);
+          }
+          if (data.status === "completed") return data.reply || "Selesai.";
+          if (data.status === "failed") {
+            throw new Error(data.detail || "Tugas chat gagal diproses.");
+          }
+
+          if (data.status !== lastStatus) {
+            pollDelay = 100;
+            lastStatus = data.status;
+          } else {
+            pollDelay = Math.min(Math.ceil(pollDelay * 1.35), 150);
+          }
+          retryDelay = 1000;
+          await sleep(pollDelay);
+        } catch (err) {
+          if (err instanceof TypeError) {
+            await sleep(retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 15000);
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    async function resumePendingChatJob() {
+      let activeJob;
+      try {
+        activeJob = JSON.parse(localStorage.getItem(ACTIVE_CHAT_JOB_KEY) || "null");
+      } catch (err) {
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        return;
+      }
+      if (!activeJob || !activeJob.jobId) return;
+
+      sendBtn.disabled = true;
+      showTyping();
+      const stopBtn = document.getElementById("stop-btn");
+      if (stopBtn && activeJob.isTutoring) {
+        stopBtn.style.display = "inline-flex";
+        stopBtn.disabled = false;
+      }
+
+      try {
+        const reply = await pollChatJob(activeJob.jobId);
+        appendMessage("ai", reply);
+      } catch (err) {
+        appendMessage("ai", `❌ **Tugas chat:** ${err.message}`);
+      } finally {
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        hideTyping();
+        sendBtn.disabled = false;
+        if (activeJob.isTutoring) stopRequested = false;
+        if (stopBtn) {
+          stopBtn.style.display = "none";
+          stopBtn.disabled = false;
+          stopBtn.innerText = "🛑 Stop Les";
+        }
+      }
+    }
+
+    async function stopActiveSession() {
+      if (stopRequested) return;
+      stopRequested = true;
+
+      const stopBtn = document.getElementById("stop-btn");
+      if (stopBtn) {
+        stopBtn.disabled = true;
+        stopBtn.innerText = "⏳ Menghentikan...";
+      }
+
+      const typingMeta = document.querySelector("#typing-row .bubble-meta");
+      if (typingMeta) {
+        typingMeta.innerText = "🧠 Carl sedang menghentikan sesi dan merapikan materi...";
+      }
+
+      try {
+        const resp = await fetch("/api/chat-stop", { method: "POST" });
+        const data = await readApiJson(resp);
+        if (!resp.ok) {
+          throw new Error(data.detail || "Server Carl menolak permintaan berhenti.");
+        }
+      } catch (err) {
+        stopRequested = false;
+        console.error("Gagal kirim stop:", err);
+        appendMessage("ai", `❌ Tidak dapat menghentikan sesi les: ${err.message || "Koneksi ke server gagal."}`);
+        if (stopBtn) {
+          stopBtn.disabled = false;
+          stopBtn.innerText = "🛑 Stop Les";
+        }
+      }
+    }
+
+    async function sendMessage(textToSend) {
+      const text = textToSend || userInput.value.trim();
+      if (!text) return;
+
+      appendMessage("user", text);
+      if (!textToSend) {
+        userInput.value = "";
+        userInput.style.height = "auto";
+      }
+
+      showTyping();
+      sendBtn.disabled = true;
+
+      const stopBtn = document.getElementById("stop-btn");
+      const isTutoring = text.startsWith("/les") || text.toLowerCase().startsWith("les ") || text.includes("/gemini");
+      if (stopBtn && isTutoring) {
+        stopBtn.style.display = "inline-flex";
+        stopBtn.disabled = false;
+        stopBtn.innerText = "🛑 Stop Les";
+      } else if (stopBtn) {
+        stopBtn.style.display = "none";
+      }
+
+      try {
+        const resp = await fetch("/api/chat-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: text })
+        });
+
+        const data = await readApiJson(resp);
+        if (!resp.ok) {
+          throw new Error(data.reply || data.detail || "Gagal memulai tugas chat.");
+        }
+        if (!data.job_id) throw new Error("Server tidak mengembalikan ID tugas chat.");
+
+        localStorage.setItem(ACTIVE_CHAT_JOB_KEY, JSON.stringify({
+          jobId: data.job_id,
+          isTutoring
+        }));
+        const reply = await pollChatJob(data.job_id);
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        hideTyping();
+        appendMessage("ai", reply);
+      } catch (err) {
+        hideTyping();
+        localStorage.removeItem(ACTIVE_CHAT_JOB_KEY);
+        appendMessage("ai", `❌ **Koneksi/Proses terhenti:** ${err.message || "Tidak dapat menghubungi server Carl."}`);
+        sendBtn.disabled = false;
+      } finally {
+        const activeJob = localStorage.getItem(ACTIVE_CHAT_JOB_KEY);
+        if (!activeJob) {
+          sendBtn.disabled = false;
+          if (isTutoring) stopRequested = false;
+        }
+        if (stopBtn) {
+          if (!activeJob) {
+            stopBtn.style.display = "none";
+            stopBtn.disabled = false;
+            stopBtn.innerText = "🛑 Stop Les";
+          }
+        }
+        userInput.focus();
+      }
+    }
+
+    function sendQuick(cmd) {
+      sendMessage(cmd);
+    }
+
+    function promptCanvas() {
+      const topic = prompt("Masukkan topik atau tujuan untuk membuat Obsidian Visual Canvas (.canvas):", "Rencana Strategis Kuartal 4");
+      if (topic) {
+        sendMessage(`/canvas ${topic}`);
+      }
+    }
+
+    function promptCouncil() {
+      const topic = prompt("Topik apa yang ingin didebatkan di Sidang Ahli (Council of Experts)?", "Ekspansi produk baru vs perkuat fondasi produk lama");
+      if (topic) {
+        sendMessage(`/council ${topic}`);
+      }
+    }
+
+    function promptGoal() {
+      const goal = prompt("Masukkan tujuan otonom yang ingin dieksekusi bertahap (/goal):", "Audit seluruh catatan di folder 01-Projects dan buatkan ringkasan status");
+      if (goal) {
+        sendMessage(`/goal ${goal}`);
+      }
+    }
+
+    async function resetChat() {
+      if (confirm("Mulai sesi baru & bersihkan ingatan sesi obrolan aktif?")) {
+        try {
+          const resp = await fetch("/api/reset", { method: "POST" });
+          const data = await resp.json();
+          chatContainer.innerHTML = "";
+          appendMessage("ai", data.reply || "🧹 **Sesi baru dimulai!**");
+        } catch (e) {
+          appendMessage("ai", "Gagal mereset sesi.");
+        }
+      }
+    }
+
+    function toggleModal(show) {
+      document.getElementById("info-modal").style.display = show ? "flex" : "none";
+    }
+
+    // --- Web Speech API (Microphone Live STT) ---
+    let speechRecognizer = null;
+    let isRecording = false;
+
+    function toggleMicrophone() {
+      const micBtn = document.getElementById("mic-btn");
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Browser Anda belum mendukung Web Speech API langsung. Anda dapat menggunakan perintah /voice di chat.");
+        return;
+      }
+
+      if (!speechRecognizer) {
+        speechRecognizer = new SpeechRecognition();
+        speechRecognizer.lang = 'id-ID';
+        speechRecognizer.continuous = false;
+        speechRecognizer.interimResults = false;
+
+        speechRecognizer.onstart = () => {
+          isRecording = true;
+          micBtn.classList.add("recording");
+        };
+
+        speechRecognizer.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          if (transcript) {
+            userInput.value = transcript;
+            userInput.style.height = "auto";
+            userInput.style.height = Math.min(userInput.scrollHeight, 120) + "px";
+            sendMessage();
+          }
+        };
+
+        speechRecognizer.onerror = (e) => {
+          console.error("Mic error:", e);
+          isRecording = false;
+          micBtn.classList.remove("recording");
+        };
+
+        speechRecognizer.onend = () => {
+          isRecording = false;
+          micBtn.classList.remove("recording");
+        };
+      }
+
+      if (isRecording) {
+        speechRecognizer.stop();
+      } else {
+        speechRecognizer.start();
+      }
+    }
+
+    // --- Text-to-Speech (Audio Playback) ---
+    function playTTS(btn) {
+      const row = btn.closest(".message-row");
+      const bubble = row ? row.querySelector(".bubble") : null;
+      if (!bubble) return;
+      const textToSpeak = bubble.innerText.substring(0, 500);
+      btn.innerText = "⏳";
+      const audio = new Audio(`/api/tts?text=${encodeURIComponent(textToSpeak)}`);
+      audio.oncanplay = () => {
+        btn.innerText = "🔊";
+        audio.play();
+      };
+      audio.onended = () => {
+        btn.innerText = "🔊";
+      };
+      audio.onerror = () => {
+        btn.innerText = "❌";
+        setTimeout(() => btn.innerText = "🔊", 2000);
+      };
+    }
+
+    function promptVoice() {
+      const text = prompt("Masukkan kalimat yang ingin diucapkan Carl via Edge-TTS (atau kosongkan untuk mendengarkan mic):", "");
+      if (text !== null) {
+        if (text.trim()) {
+          sendMessage(`/voice ${text.trim()}`);
+        } else {
+          sendMessage('/voice');
+        }
+      }
+    }
+
+    function promptVision() {
+      const file = prompt("Masukkan nama/path berkas gambar (.png/.jpg) atau dokumen (.pdf) untuk dianalisis Carl:", "screenshot.png");
+      if (file && file.trim()) {
+        sendMessage(`/vision ${file.trim()}`);
+      }
+    }
+
+    // --- Batch 3: Mobile Bridge & Quick Memo ---
+    async function openMobileBridgeModal() {
+      const modal = document.getElementById("mobile-bridge-modal");
+      modal.style.display = "flex";
+      try {
+        const res = await fetch("/api/bridge");
+        const data = await res.json();
+        document.getElementById("mobile-url-link").innerText = data.mobile_url;
+        document.getElementById("mobile-url-link").href = data.mobile_url;
+        if (data.qr_ascii) {
+          document.getElementById("qr-ascii").innerText = data.qr_ascii;
+        }
+      } catch (e) {
+        console.error("Gagal memuat bridge info:", e);
+      }
+    }
+
+    function closeMobileBridgeModal() {
+      document.getElementById("mobile-bridge-modal").style.display = "none";
+    }
+
+    function openQuickMemoModal() {
+      document.getElementById("quick-memo-modal").style.display = "flex";
+      document.getElementById("memo-content").focus();
+    }
+
+    function closeQuickMemoModal() {
+      document.getElementById("quick-memo-modal").style.display = "none";
+      document.getElementById("memo-title").value = "";
+      document.getElementById("memo-content").value = "";
+    }
+
+    async function submitQuickMemo() {
+      const title = document.getElementById("memo-title").value.trim();
+      const content = document.getElementById("memo-content").value.trim();
+      if (!content) {
+        alert("Harap masukkan isi memo.");
+        return;
+      }
+      try {
+        const res = await fetch("/api/quick-memo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: title || undefined, content: content })
+        });
+        const data = await res.json();
+        closeQuickMemoModal();
+        appendMessage("ai", data.reply || "✅ Memo kilat berhasil disimpan ke `00-Inbox/`!");
+      } catch (e) {
+        alert("Gagal menyimpan memo: " + e.message);
+      }
+    }
+
+    function promptResearch() {
+      const topic = prompt("Masukkan topik riset atau ID paper arXiv untuk dianalisis Carl:", "multi-agent autonomous AI");
+      if (topic && topic.trim()) {
+        sendMessage(`/arxiv ${topic.trim()}`);
+      }
+    }
+
+    // --- Batch 4: Browser Agent, Evaluator, Crypto Vault ---
+    function promptBrowse() {
+      const target = prompt("Masukkan URL atau kata kunci pencarian untuk dijelajahi Carl:", "https://");
+      if (target && target.trim()) {
+        sendMessage(`/browse ${target.trim()}`);
+      }
+    }
+
+    function promptCrypto() {
+      const choices = [
+        "Status Brankas (/brankas)",
+        "Buka Sesi (/unlock <passphrase>)",
+        "Kunci Brankas (/lock)",
+        "Simpan Catatan Rahasia (/secure <judul> | <isi>)",
+        "Baca Catatan Rahasia (/reveal <judul>)"
+      ];
+      const choice = prompt(
+        "🔐 Pilih aksi Brankas Rahasia AES-256:\n" +
+        choices.map((c, i) => `${i+1}. ${c}`).join("\n") +
+        "\n\nKetik nomor pilihan atau langsung ketik perintah:",
+        "1"
+      );
+      if (!choice) return;
+      const n = parseInt(choice.trim());
+      if (n === 1) { sendMessage("/brankas"); return; }
+      if (n === 2) {
+        const pass = prompt("Masukkan passphrase untuk membuka brankas:");
+        if (pass) sendMessage(`/unlock ${pass}`);
+        return;
+      }
+      if (n === 3) { sendMessage("/lock"); return; }
+      if (n === 4) {
+        const title = prompt("Judul catatan rahasia:");
+        const body = prompt("Isi catatan rahasia:");
+        if (title && body) sendMessage(`/secure ${title} | ${body}`);
+        return;
+      }
+      if (n === 5) {
+        const title = prompt("Judul catatan rahasia yang ingin dibaca:");
+        if (title) sendMessage(`/reveal ${title}`);
+        return;
+      }
+      // Fallback: kirim langsung jika bukan nomor
+      if (isNaN(n)) sendMessage(choice.trim());
+    }
+
+    // --- Batch 5: Swarm Simulator ---
+    function promptSimulate() {
+      const scenario = prompt("Masukkan skenario bisnis/strategi untuk disimulasikan 10 persona otonom (/simulate):", "Meluncurkan produk kursus AI mandiri di tahun 2026");
+      if (scenario && scenario.trim()) {
+        sendMessage(`/simulate ${scenario.trim()}`);
+      }
+    }
+
+    // --- Frontier P: Gemini Browser Bridge ---
+    function promptGeminiDialog() {
+      const topic = prompt(
+        "🤖 Masukkan topik untuk diskusi kolaboratif Carl & Google Gemini di browser:\n(Contoh: Strategi AI Agent & Second Brain 2026)",
+        "Strategi AI Agent & Second Brain 2026"
+      );
+      if (topic && topic.trim()) {
+        sendMessage(`/gemini_dialog ${topic.trim()}`);
+      }
+    }
+
+    // --- Frontier Q: Carl Tutoring Academy ---
+    function promptTutoring() {
+      const topic = prompt(
+        "🎓 Masukkan topik ilmu yang ingin dipelajari Carl dari Guru Gemini:\n(Contoh: Arsitektur Microservices Modern 2026)",
+        "Arsitektur Microservices Modern 2026"
+      );
+      if (topic && topic.trim()) {
+        sendMessage(`/les ${topic.trim()}`);
+      }
+    }
+
+    // --- Horizontal Wheel Scroll for Quick-Bar ---
+    const qb = document.querySelector('.quick-bar');
+    if (qb) {
+      qb.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          qb.scrollLeft += e.deltaY * 1.5;
+        }
+      }, { passive: false });
+    }
+
+    resumePendingChatJob();
+  </script>
+</body>
+</html>

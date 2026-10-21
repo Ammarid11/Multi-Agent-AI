@@ -1,0 +1,15 @@
+{
+  "framework": null,
+  "outputDirectory": "web",
+  "functions": {
+    "api/[...path].js": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/galaxy",
+      "destination": "/spatial_graph.html"
+    }
+  ]
+}

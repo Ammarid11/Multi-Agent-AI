@@ -1,0 +1,266 @@
+2026-10-22 06:30:06,403 ERROR [-] memory.vector_store: Unable to load Qdrant collection obsidian_vault
+Traceback (most recent call last):
+  File "E:\Project AI 2026\Multi-Agent AI\memory\vector_store.py", line 42, in load_db
+    self.vector_db = QdrantVectorStore(
+                     ~~~~~~~~~~~~~~~~~^
+        client=self.client,
+        ^^^^^^^^^^^^^^^^^^^
+        collection_name=config.COLLECTION_NAME,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        embedding=self.embeddings
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_qdrant\qdrant.py", line 241, in __init__
+    self._validate_collection_config(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        client,
+        ^^^^^^^
+    ...<5 lines>...
+        embedding,
+        ^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_qdrant\qdrant.py", line 1161, in _validate_collection_config
+    cls._validate_collection_for_dense(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        client, collection_name, vector_name, distance, embedding
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_qdrant\qdrant.py", line 1223, in _validate_collection_for_dense
+    vector_size = len(dense_embeddings.embed_documents(["dummy_text"])[0])
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_ollama\embeddings.py", line 325, in embed_documents
+    return self._client.embed(
+           ~~~~~~~~~~~~~~~~~~^
+        self.model,
+        ^^^^^^^^^^^
+    ...<3 lines>...
+        keep_alive=self.keep_alive,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )["embeddings"]
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 415, in embed
+    return self._request(
+           ~~~~~~~~~~~~~^
+      EmbedResponse,
+      ^^^^^^^^^^^^^^
+    ...<9 lines>...
+      ).model_dump(exclude_none=True),
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 199, in _request
+    return cls(**self._request_raw(*args, **kwargs).json())
+                 ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 145, in _request_raw
+    raise ConnectionError(CONNECTION_ERROR_MESSAGE) from None
+ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download
+2026-10-22 06:30:06,453 ERROR [-] memory.manager: Qdrant collection obsidian_vault exists but could not be loaded; refusing to recreate it.
+2026-10-22 06:30:12,692 ERROR [5e082234] agents.bot_router_llm: Intent classification failed; routing to the default agent.
+Traceback (most recent call last):
+  File "E:\Project AI 2026\Multi-Agent AI\agents\bot_router_llm.py", line 43, in classify_intent
+    res = ollama.chat(
+        model=config.MODEL_WRITER,
+    ...<5 lines>...
+        keep_alive=config.KEEP_ALIVE_DEFAULT,
+    )
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 387, in chat
+    return self._request(
+           ~~~~~~~~~~~~~^
+      ChatResponse,
+      ^^^^^^^^^^^^^
+    ...<14 lines>...
+      stream=stream,
+      ^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 199, in _request
+    return cls(**self._request_raw(*args, **kwargs).json())
+                 ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 145, in _request_raw
+    raise ConnectionError(CONNECTION_ERROR_MESSAGE) from None
+ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download
+2026-10-22 06:30:16,766 ERROR [5e082234] memory.vector_store: Unable to load Qdrant collection obsidian_vault
+Traceback (most recent call last):
+  File "E:\Project AI 2026\Multi-Agent AI\memory\vector_store.py", line 42, in load_db
+    self.vector_db = QdrantVectorStore(
+                     ~~~~~~~~~~~~~~~~~^
+        client=self.client,
+        ^^^^^^^^^^^^^^^^^^^
+        collection_name=config.COLLECTION_NAME,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        embedding=self.embeddings
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_qdrant\qdrant.py", line 241, in __init__
+    self._validate_collection_config(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        client,
+        ^^^^^^^
+    ...<5 lines>...
+        embedding,
+        ^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_qdrant\qdrant.py", line 1161, in _validate_collection_config
+    cls._validate_collection_for_dense(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        client, collection_name, vector_name, distance, embedding
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_qdrant\qdrant.py", line 1223, in _validate_collection_for_dense
+    vector_size = len(dense_embeddings.embed_documents(["dummy_text"])[0])
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\langchain_ollama\embeddings.py", line 325, in embed_documents
+    return self._client.embed(
+           ~~~~~~~~~~~~~~~~~~^
+        self.model,
+        ^^^^^^^^^^^
+    ...<3 lines>...
+        keep_alive=self.keep_alive,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )["embeddings"]
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 415, in embed
+    return self._request(
+           ~~~~~~~~~~~~~^
+      EmbedResponse,
+      ^^^^^^^^^^^^^^
+    ...<9 lines>...
+      ).model_dump(exclude_none=True),
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 199, in _request
+    return cls(**self._request_raw(*args, **kwargs).json())
+                 ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 145, in _request_raw
+    raise ConnectionError(CONNECTION_ERROR_MESSAGE) from None
+ConnectionError: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download
+2026-10-22 06:30:16,767 ERROR [5e082234] memory.manager: Semantic retrieval unavailable; continuing with lexical/graph search.
+Traceback (most recent call last):
+  File "E:\Project AI 2026\Multi-Agent AI\memory\manager.py", line 231, in _search_vectors
+    return self.store.similarity_search(query, k=k), False
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "E:\Project AI 2026\Multi-Agent AI\memory\vector_store.py", line 107, in similarity_search
+    raise RuntimeError("Qdrant vector collection is unavailable.")
+RuntimeError: Qdrant vector collection is unavailable.
+2026-10-22 06:30:16,777 INFO [5e082234] memory.manager: carl_stage component=retrieval stage=vector_search duration_ms=4063.49
+2026-10-22 06:30:16,777 INFO [5e082234] memory.manager: carl_stage component=retrieval stage=keyword_search duration_ms=0.08 chunks=2560
+2026-10-22 06:30:16,777 INFO [5e082234] memory.manager: carl_stage component=retrieval stage=graph_retrieval duration_ms=0.00 linked_documents=0 seed_documents=0
+2026-10-22 06:30:16,777 INFO [5e082234] memory.manager: carl_stage component=retrieval stage=result_formatting duration_ms=0.01 context_chars=0
+2026-10-22 06:30:16,777 INFO [5e082234] memory.manager: carl_stage component=retrieval stage=total duration_ms=4063.84 keyword_results=0 vector_results=0
+2026-10-22 06:30:16,777 INFO [5e082234] agents.bot_writer: carl_stage component=writer stage=retrieval duration_ms=4064.04
+2026-10-22 06:30:16,793 INFO [5e082234] agents.bot_writer: carl_stage component=writer stage=prompt_preparation duration_ms=15.05 history_messages=0 prompt_chars=7091
+2026-10-22 06:30:18,822 ERROR [5e082234] agents: Terjadi kesalahan pada bot_writer saat memproses prompt.
+Traceback (most recent call last):
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_transports\default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_transports\default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpcore\_sync\connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpcore\_sync\connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpcore\_sync\connection.py", line 101, in handle_request
+    raise exc
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpcore\_sync\connection.py", line 78, in handle_request
+    stream = self._connect(request)
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpcore\_sync\connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpcore\_backends\sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpcore\_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "E:\Project AI 2026\Multi-Agent AI\agents\__init__.py", line 187, in bot_writer
+    reply = run_bot_writer(
+        prompt, self.memory, self.chat_history,
+        session_context=self._get_session_ctx(),
+        user_name=self.user_name
+    )
+  File "E:\Project AI 2026\Multi-Agent AI\agents\bot_writer.py", line 738, in run_bot_writer
+    res = chat_with_optional_stream(
+        model=config.MODEL_WRITER,
+    ...<2 lines>...
+        keep_alive=config.KEEP_ALIVE_DEFAULT,
+    )
+  File "E:\Project AI 2026\Multi-Agent AI\agents\streaming.py", line 59, in chat_with_optional_stream
+    for chunk in response_chunks:
+                 ^^^^^^^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\ollama\_client.py", line 184, in inner
+    with self._client.stream(*args, **kwargs) as r:
+         ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_client.py", line 868, in stream
+    response = self.send(
+        request=request,
+    ...<2 lines>...
+        stream=True,
+    )
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_transports\default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\xpect\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\httpx\_transports\default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [WinError 10061] No connection could be made because the target machine actively refused it
+2026-10-22 06:30:18,893 INFO [5e082234] agents.router: carl_stage component=router stage=agent_execution duration_ms=6190.62 intent=default
+2026-10-22 06:30:18,893 INFO [-] agents.router: carl_stage component=router stage=total duration_ms=8252.95 remote=False status=ok
+2026-10-22 06:30:18,894 INFO [-] api_server: carl_stage component=api stage=chat_job duration_ms=8253.04 queue_wait_ms=0.37 status=completed
+2026-10-22 06:31:01,678 INFO [3ebc888c] httpx: HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-10-22 06:31:05,990 INFO [3ebc888c] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:31:06,028 INFO [3ebc888c] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:31:06,047 INFO [3ebc888c] memory.manager: carl_stage component=retrieval stage=vector_search duration_ms=4367.68
+2026-10-22 06:31:06,102 INFO [3ebc888c] memory.manager: carl_stage component=retrieval stage=keyword_search duration_ms=54.56 chunks=2560
+2026-10-22 06:31:06,103 INFO [3ebc888c] memory.manager: carl_stage component=retrieval stage=graph_retrieval duration_ms=0.12 linked_documents=0 seed_documents=5
+2026-10-22 06:31:06,104 INFO [3ebc888c] memory.manager: carl_stage component=retrieval stage=result_formatting duration_ms=0.28 context_chars=1555
+2026-10-22 06:31:06,104 INFO [3ebc888c] memory.manager: carl_stage component=retrieval stage=total duration_ms=4424.45 keyword_results=57 vector_results=6
+2026-10-22 06:31:06,105 INFO [3ebc888c] agents.bot_writer: carl_stage component=writer stage=retrieval duration_ms=4424.79
+2026-10-22 06:31:06,106 INFO [3ebc888c] agents.bot_writer: carl_stage component=writer stage=prompt_preparation duration_ms=1.51 history_messages=2 prompt_chars=8610
+2026-10-22 06:31:09,689 INFO [3ebc888c] httpx: HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-10-22 06:31:11,264 INFO [3ebc888c] agents.bot_writer: carl_stage component=writer stage=inference duration_ms=5157.13
+2026-10-22 06:31:11,264 INFO [3ebc888c] agents.bot_writer: carl_stage component=writer stage=total duration_ms=9583.91
+2026-10-22 06:31:11,264 INFO [3ebc888c] agents.router: carl_stage component=router stage=agent_execution duration_ms=9585.07 intent=default
+2026-10-22 06:31:11,264 INFO [-] agents.router: carl_stage component=router stage=total duration_ms=35559.85 remote=False status=ok
+2026-10-22 06:31:11,264 INFO [-] api_server: carl_stage component=api stage=chat_job duration_ms=35559.95 queue_wait_ms=0.33 status=completed
+2026-10-22 06:32:12,462 INFO [dde4d8ee] httpx: HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-10-22 06:32:13,437 INFO [-] primp: response: https://www.bing.com/news/infinitescrollajax?q=berita+terbaru+karhutla&InfiniteScroll=1&first=11&SFX=1&cc=id&setlang=id 200
+2026-10-22 06:32:13,835 INFO [dde4d8ee] ddgs.ddgs: Error in engine duckduckgo: DDGSException("RequestError: RequestError('error sending request for url (https://duckduckgo.com/?q=berita+terbaru+karhutla) > tls handshake eof')")
+2026-10-22 06:33:09,010 INFO [dde4d8ee] httpx: HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-10-22 06:33:09,011 INFO [dde4d8ee] agents.router: carl_stage component=router stage=agent_execution duration_ms=56548.59 intent=web
+2026-10-22 06:33:09,011 INFO [-] agents.router: carl_stage component=router stage=total duration_ms=58814.96 remote=False status=ok
+2026-10-22 06:33:09,011 INFO [-] api_server: carl_stage component=api stage=chat_job duration_ms=58815.05 queue_wait_ms=0.34 status=completed

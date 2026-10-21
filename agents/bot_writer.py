@@ -144,7 +144,10 @@ def _resolve_summary_source(prompt: str) -> tuple[Path | None, str | None]:
     notes = [
         path
         for path in vault_root.rglob("*.md")
-        if not any(part.startswith(".") for part in path.relative_to(vault_root).parts[:-1])
+        if not any(
+            part.startswith(".") or part.casefold() == "04-secure"
+            for part in path.relative_to(vault_root).parts[:-1]
+        )
     ]
     exact_matches = [
         path for path in notes

@@ -1,51 +1,67 @@
 # tools/tool_delete.py
+"""Hapus catatan: dua langkah (konfirmasi) dan masuk .trash (bisa dipulihkan dengan /undo), bukan penghapusan permanen."""
 import os
 import glob
+
 import config
+from core import vault_io
+from core.confirm import request_confirmation, confirmation_hint
 
 
-def delete_file(filename: str) -> str:
-    """Delete only an exact Vault path; never choose a fuzzy or newest match."""
+def _resolve_exact(filename: str):
     requested = filename.strip().replace("\\", "/")
     if not requested:
-        return "❌ Nama file kosong. Tidak ada file yang dihapus."
+        return None, "❌ Nama file kosong. Tidak ada file yang dihapus."
     if not requested.lower().endswith(".md"):
         requested += ".md"
 
     vault_root = os.path.abspath(config.VAULT_PATH)
-    direct_path = os.path.abspath(os.path.join(vault_root, requested))
     try:
-        if os.path.commonpath([vault_root, direct_path]) != vault_root:
-            return "❌ Path harus berada di dalam Vault. Tidak ada file yang dihapus."
+        direct_path = str(vault_io.safe_path(requested))
     except ValueError:
-        return "❌ Path tidak valid. Tidak ada file yang dihapus."
+        return None, "❌ Path harus berada di dalam Vault. Tidak ada file yang dihapus."
 
     if os.path.isfile(direct_path):
         matches = [direct_path]
     elif "/" in requested:
         matches = []
     else:
-        matches = glob.glob(
-            os.path.join(vault_root, "**", os.path.basename(requested)),
-            recursive=True,
-        )
-        matches = [path for path in matches if os.path.isfile(path)]
+        matches = glob.glob(os.path.join(vault_root, "**", os.path.basename(requested)), recursive=True)
+        matches = [p for p in matches if os.path.isfile(p)]
 
     if not matches:
-        return f"❌ Catatan '{filename}' tidak ditemukan. Tidak ada file yang dihapus."
+        return None, f"❌ Catatan '{filename}' tidak ditemukan. Tidak ada file yang dihapus."
     if len(matches) > 1:
-        choices = [
-            os.path.relpath(path, vault_root).replace("\\", "/")
-            for path in sorted(matches)
-        ]
-        return (
+        choices = [os.path.relpath(p, vault_root).replace("\\", "/") for p in sorted(matches)]
+        return None, (
             "⚠️ Ada beberapa catatan dengan nama sama; tidak ada yang dihapus. "
             "Kirim ulang dengan path Vault lengkap:\n- " + "\n- ".join(choices)
         )
+    if vault_io.is_blocked_path(matches[0]):
+        return None, "❌ Catatan di 04-Secure tidak dapat dihapus lewat perintah ini."
+    return matches[0], None
 
-    filepath = matches[0]
+
+def delete_file(filename: str) -> str:
+    """Langkah 1: validasi target eksak, lalu minta konfirmasi. Tidak ada yang dihapus di langkah ini."""
+    path, error = _resolve_exact(filename)
+    if error:
+        return error
+    rel = os.path.relpath(path, config.VAULT_PATH).replace("\\", "/")
+    code = request_confirmation("delete", {"rel": rel}, f"Hapus catatan {rel}")
+    return (
+        f"⚠️ Akan menghapus `{rel}` (dipindahkan ke `.trash`, bisa dipulihkan dengan `/undo`).\n"
+        f"{confirmation_hint(code)}"
+    )
+
+
+def delete_file_confirmed(rel: str) -> str:
+    """Langkah 2 (setelah /confirm): pindahkan ke .trash."""
+    path, error = _resolve_exact(rel)
+    if error:
+        return error
     try:
-        os.remove(filepath)
-        return f"🗑️ Catatan '{os.path.relpath(filepath, vault_root)}' berhasil dihapus!"
-    except OSError as error:
-        return f"❌ Gagal menghapus file: {error}"
+        vault_io.move_to_trash(path)
+    except (OSError, ValueError) as err:
+        return f"❌ Gagal menghapus file: {err}"
+    return f"🗑️ Catatan '{rel}' dipindahkan ke .trash. Pulihkan dengan `/undo {os.path.basename(rel)}`."

@@ -3,6 +3,7 @@ import os
 import re
 from datetime import datetime
 import config
+from core import vault_io
 from tools.tool_append import append_file, find_file_in_vault
 from tools.clean_markdown import clean_and_refactor_file
 
@@ -18,19 +19,15 @@ def create_file(filename: str, content: str) -> str:
     clean_base = re.sub(r'^(carl|cart|bot|asisten)\s*[-_:]*\s*', '', base_part, flags=re.IGNORECASE).strip()
     clean_filename = os.path.join(dir_part, clean_base) if dir_part else clean_base
 
-    filepath = find_file_in_vault(clean_filename)
+    path, error = vault_io.resolve_write_path(clean_filename)
+    if error:
+        return f"❌ {error}"
+    filepath = str(path)
 
-    # Proteksi: Hanya beralih ke append jika nama file fisik benar-benar sama, bukan hasil fuzzy ke file lain
-    target_base = clean_base.lower() if clean_base.lower().endswith('.md') else clean_base.lower() + '.md'
-    actual_base = os.path.basename(filepath).lower()
-
-    if os.path.exists(filepath) and actual_base == target_base and os.path.getsize(filepath) > 50:
+    # Berkas dengan nama yang persis sama dan sudah berisi -> tambahkan (bukan menimpa)
+    if os.path.exists(filepath) and os.path.getsize(filepath) > 50:
         return append_file(filename, content)
-    elif os.path.exists(filepath) and actual_base != target_base:
-        # Fuzzy match merujuk ke file yang beda judul. Buat file baru sesuai judul asli yang diminta
-        filepath = os.path.join(config.VAULT_PATH, clean_filename if clean_filename.endswith('.md') else clean_filename + '.md')
 
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     final_content = content.strip()
@@ -40,8 +37,7 @@ def create_file(filename: str, content: str) -> str:
         final_content = final_content.replace("---", f"---\ncreated: {now_str}", 1)
 
     try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(final_content + "\n")
+        vault_io.atomic_write(path, final_content + "\n")
 
         # AUTO-CLEAN: Otomatis rapikan format dokumen baru sesuai standar Obsidian
         base_name = os.path.basename(filepath)

@@ -8,6 +8,8 @@ from html.parser import HTMLParser
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Tuple
 
+from core.netguard import safe_fetch
+
 def _format_date(date_str: str) -> str:
     """Format string tanggal ISO/tanggal biasa menjadi format yang mudah dibaca."""
     if not date_str:
@@ -342,10 +344,9 @@ def _fetch_article_page(
         return "", "", ""
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            html = resp.read().decode('utf-8', errors='ignore')
-            published_date, modified_date = _extract_article_dates(html)
+        body, _ = safe_fetch(url, timeout=timeout, max_bytes=1_500_000, headers=headers)
+        html = body.decode('utf-8', errors='ignore')
+        published_date, modified_date = _extract_article_dates(html)
 
         # PERBAIKAN: Mengubah </1> menjadi </\1> agar backreference regex berfungsi normal
         clean = re.sub(r'<(script|style|nav|header|footer|aside)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)

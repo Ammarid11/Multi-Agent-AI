@@ -2,6 +2,7 @@
 import re
 import logging
 import time
+import uuid
 from typing import Callable, List, Optional, Sequence, Tuple
 from tools import read_file, create_file, append_file, delete_file, relocate_content, clean_target, web_search
 from agents.bot_file_manager import is_contextual_save_request
@@ -11,8 +12,14 @@ from agents.grounding import has_explicit_markdown_reference
 
 from memory.rules_engine import add_rule, delete_rule, format_rules_summary
 from observability import log_stage
+from core import vault_io
+from core.logging_setup import request_id
+from core.privacy import is_sensitive, command_allowed_for_remote, intent_allowed_for_remote
+from tools.confirm_actions import execute_confirmed
 
 logger = logging.getLogger(__name__)
+
+REMOTE_DENIED = "⚠️ Perintah ini tidak diizinkan dari perangkat remote. Gunakan komputer utama."
 
 HELP_MENU = r"""### 📖 Panduan Perintah (Slash Commands) Multi-Agent AI (Level 4 System)
 
@@ -51,6 +58,8 @@ HELP_MENU = r"""### 📖 Panduan Perintah (Slash Commands) Multi-Agent AI (Level
 | `/append <file/orang> \| <isi>` | Tambah / perbarui isi catatan di Vault |
 | `/delete <file>` | Hapus file catatan dari Vault |
 | `/move <asal> -> <tujuan>` | Pindahkan materi antar catatan |
+| `/confirm <kode>` | Konfirmasi aksi tertunda (hapus, relokasi, rapikan folder) |
+| `/undo <nama>` | Kembalikan versi sebelumnya sebuah catatan, atau pulihkan dari `.trash` |
 | `/clean [file/folder]` | Audit, perbaiki format & struktur folder (bisa juga diminta dengan bahasa biasa) |
 
 *Tips: Anda juga bisa langsung mengobrol tanpa perintah. Pertanyaan sederhana memakai jalur cepat; permintaan analisis, perbandingan, perencanaan, hitungan, atau masalah bersyarat memakai penalaran mendalam.*
@@ -251,9 +260,13 @@ class AgentRouter:
     def __init__(self, team):
         self.team = team
 
-    def _check_command(self, p: str, raw: str) -> Optional[str]:
+    def _check_command(self, p: str, raw: str, remote: bool = False) -> Optional[str]:
         """Layer 1: Perintah manual slash command."""
+        if remote and p.startswith("/") and not command_allowed_for_remote(raw):
+            return REMOTE_DENIED
         commands = [
+            (("/confirm", "/konfirmasi"), lambda q: execute_confirmed(q)),
+            (("/undo", "/batalkan"), lambda q: vault_io.undo_last(q)),
             (("/help", "/menu", "/bantuan"), lambda q: HELP_MENU),
             (("/new", "/reset", "/clear"), lambda q: self.team.reset_session()),
             (("/goal", "/tujuan", "/task"), lambda q: self.team.bot_goal(q)),
@@ -314,8 +327,10 @@ class AgentRouter:
 
         return None
 
-    def _route_by_intent(self, intent: str, raw: str) -> str:
+    def _route_by_intent(self, intent: str, raw: str, remote: bool = False) -> str:
         """Eksekusi agen berdasarkan intent akhir."""
+        if remote and not intent_allowed_for_remote(intent):
+            return REMOTE_DENIED
         intent_map = {
             "web":         lambda: self.team.bot_web(raw),
             "think":       lambda: self.team.bot_reasoner(raw),
@@ -354,40 +369,53 @@ class AgentRouter:
                 intent=intent,
             )
 
-    def route_and_execute(self, user_prompt: str) -> str:
-        """Pintu masuk routing eksekusi cerdas."""
-        total_started = time.perf_counter()
+    def route_and_execute(self, user_prompt: str, remote: bool = False) -> str:
+        """Pintu masuk routing eksekusi cerdas. remote=True: perangkat non-lokal (izin dibatasi)."""
+        token = request_id.set(uuid.uuid4().hex[:8])
+        started, status = time.perf_counter(), "ok"
+        try:
+            return self._route_and_execute(user_prompt, remote)
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            request_id.reset(token)
+            log_stage(logger, "router", "total", started, status=status, remote=remote)
+
+    def _route_and_execute(self, user_prompt: str, remote: bool) -> str:
+        sensitive = is_sensitive(user_prompt)
         prepare_for_prompt = getattr(self.team, "prepare_for_prompt", None)
         if callable(prepare_for_prompt):
             prepare_for_prompt()
         p = user_prompt.strip().lower()
 
         # 1. Cek Slash Command
-        reply = self._check_command(p, user_prompt)
+        reply = self._check_command(p, user_prompt, remote=remote)
         if reply is None:
             if _is_negated_fast_trigger(p):
-                reply = self._route_by_intent("default", user_prompt)
+                reply = self._route_by_intent("default", user_prompt, remote=remote)
             elif is_contextual_save_request(p):
                 print("\n⚡ [Fast Router] Permintaan simpan konteks percakapan terdeteksi.")
-                reply = self._route_by_intent("file", user_prompt)
+                reply = self._route_by_intent("file", user_prompt, remote=remote)
             elif is_named_note_summary_request(user_prompt):
                 print("\n⚡ [Fast Router] Permintaan rangkuman diarahkan ke pemeriksaan sumber penuh.")
-                reply = self._route_by_intent("default", user_prompt)
+                reply = self._route_by_intent("default", user_prompt, remote=remote)
             elif (
                 has_explicit_markdown_reference(user_prompt)
                 and not _is_explicit_file_action(user_prompt)
             ):
                 print("\n⚡ [Fast Router] Pertanyaan dengan sumber Vault eksplisit diarahkan ke Carl.")
-                reply = self._route_by_intent("default", user_prompt)
+                reply = self._route_by_intent("default", user_prompt, remote=remote)
             else:
                 # 2. Stage 1: Fast Check (0 ms)
                 fast_intent = self._fast_intent_check(p)
                 if fast_intent:
+                    sensitive = sensitive or fast_intent == "crypto"
                     print(f"\n⚡ [Fast Router] Pola terdeteksi instan: [{fast_intent}]")
-                    reply = self._route_by_intent(fast_intent, user_prompt)
+                    reply = self._route_by_intent(fast_intent, user_prompt, remote=remote)
                 elif _is_general_question(user_prompt):
                     print("\n⚡ [Fast Router] Pertanyaan informasi umum diarahkan langsung ke Carl.")
-                    reply = self._route_by_intent("default", user_prompt)
+                    reply = self._route_by_intent("default", user_prompt, remote=remote)
                 else:
                     # 3. Stage 2: Smart LLM Classifier (Cadangan untuk kalimat ambigu/bahasa gaul)
                     print("\n🔀 [Router] Menganalisis kalimat via LLM Classifier...")
@@ -395,10 +423,10 @@ class AgentRouter:
                     if intent == "file" and not _is_explicit_file_action(user_prompt):
                         intent = "default"
                     print(f"   → Intent terdeteksi: [{intent}]")
-                    reply = self._route_by_intent(intent, user_prompt)
+                    reply = self._route_by_intent(intent, user_prompt, remote=remote)
 
+        # Perintah brankas (/unlock, /secure, /reveal, ...) dan balasannya tidak pernah masuk riwayat/ringkasan.
         record_response = getattr(self.team, "record_untracked_response", None)
-        if callable(record_response):
+        if callable(record_response) and not sensitive:
             record_response(user_prompt, reply)
-        log_stage(logger, "router", "total", total_started)
         return reply

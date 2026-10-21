@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import config
+from memory.vault_scanner import is_indexable_note
 
 def generate_synthetic_eval_dataset(vault_path: str = config.VAULT_PATH, max_samples: int = 5) -> List[Dict[str, Any]]:
     """
@@ -20,7 +21,7 @@ def generate_synthetic_eval_dataset(vault_path: str = config.VAULT_PATH, max_sam
     # Pilih catatan yang memiliki konten substantif
     for md_file in sorted(vault.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
         rel_str = str(md_file.relative_to(vault)).replace("\\", "/")
-        if any(rel_str.startswith(skip) for skip in [".", "Templates", "99-System", ".trash"]):
+        if not is_indexable_note(str(md_file), str(vault)):
             continue
 
         try:

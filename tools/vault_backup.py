@@ -98,7 +98,7 @@ def backup_vault(
     # File/folder yang diabaikan saat backup agar arsip bersih & efisien
     ignored_patterns = {
         ".git", ".trash", ".DS_Store", "desktop.ini", "thumbs.db",
-        ".obsidian/cache", ".obsidian/workspace.json"
+        ".obsidian/cache", ".obsidian/workspace.json", "07-Settings/snapshots"
     }
 
     file_count = 0

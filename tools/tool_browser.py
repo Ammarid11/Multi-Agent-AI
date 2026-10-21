@@ -6,12 +6,14 @@ mengonversi tabel HTML ke tabel Markdown resmi, dan mengarsipkan halaman web
 menjadi catatan kaya wawasan di 03-Resources/Web/ di Obsidian Vault.
 """
 
+import json
 import re
-import urllib.request
 from pathlib import Path
 from typing import Dict, Any
 from bs4 import BeautifulSoup, Tag
 import config
+from core import vault_io
+from core.netguard import safe_fetch, UnsafeURL
 from tools.tool_web_search import web_search_structured
 
 
@@ -62,10 +64,12 @@ def fetch_and_clean_webpage(url: str, timeout: int = 15) -> Dict[str, Any]:
         "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
     }
 
-    req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            html = response.read().decode("utf-8", errors="replace")
+        body, final_url = safe_fetch(url, timeout=timeout, max_bytes=2_000_000, headers=headers)
+        html = body.decode("utf-8", errors="replace")
+        url = final_url
+    except UnsafeURL as e:
+        return {"success": False, "error": f"URL ditolak demi keamanan ({e})", "url": url}
     except Exception as e:
         return {"success": False, "error": f"Gagal mengakses URL ({str(e)})", "url": url}
 
@@ -138,10 +142,11 @@ def archive_web_page_to_vault(url: str, vault_path: str = config.VAULT_PATH) -> 
     desc_section = f"> **Ringkasan:** {data['description']}\n\n" if data["description"] else ""
 
     note_body = f"""---
-title: "{data['title']}"
-url: "{data['url']}"
+title: {json.dumps(data['title'], ensure_ascii=False)}
+url: {json.dumps(data['url'])}
 captured: "{now_str}"
 tags: ["web-capture", "browser-agent", "resources"]
+trust: external_web
 status: archived
 ---
 
@@ -159,7 +164,7 @@ status: archived
 """
 
     try:
-        file_path.write_text(note_body, encoding="utf-8")
+        vault_io.atomic_write(file_path, note_body)
         return {
             "success": True,
             "title": data["title"],

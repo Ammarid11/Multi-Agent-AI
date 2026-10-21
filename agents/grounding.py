@@ -105,7 +105,7 @@ _RECENCY_STOPWORDS = {
 }
 _EXCLUDED_RECENCY_DIRS = {
     ".trash", "trash", "archive", "archives", "99-archive", "templates",
-    "07-settings", "99-system",
+    "07-settings", "99-system", "04-secure",
 }
 _RECENCY_NOTE_DATE_PATTERN = re.compile(
     r"(?im)^\s*created\s*:\s*[\"']?(\d{4}-\d{2}-\d{2})"
@@ -214,7 +214,10 @@ def load_explicit_vault_sources(
     notes = [
         path
         for path in root.rglob("*.md")
-        if not any(part.startswith(".") for part in path.relative_to(root).parts[:-1])
+        if not any(
+            part.startswith(".") or part.casefold() == "04-secure"
+            for part in path.relative_to(root).parts[:-1]
+        )
     ]
 
     def mentioned(reference: str) -> bool:
@@ -307,7 +310,7 @@ def add_explicit_vault_sources(
     errors: List[str] = []
     for path in root.rglob("*.md"):
         relative = path.relative_to(root)
-        if any(part.startswith(".") for part in relative.parts[:-1]):
+        if any(part.startswith(".") or part.casefold() == "04-secure" for part in relative.parts[:-1]):
             continue
         relative_name = relative.as_posix()
         if relative_name.casefold() not in normalized_prompt:

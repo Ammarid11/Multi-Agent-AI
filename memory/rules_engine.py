@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import config
 
-RULES_FILE = os.path.join(config.DB_PATH, ".system_rules.json")
+RULES_FILE = config.state_file(".system_rules.json")
 
 
 def load_rules() -> List[Dict[str, str]]:

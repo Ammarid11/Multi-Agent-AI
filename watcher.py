@@ -3,7 +3,7 @@ import os
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
-from memory import MemoryManager
+from memory.manager import MemoryManager
 import config
 
 
@@ -14,11 +14,14 @@ class ObsidianVaultHandler(FileSystemEventHandler):
         self.memory_manager = memory_manager
 
     def on_any_event(self, event: FileSystemEvent) -> None:
-        src = str(event.src_path).replace("\\", "/")
+        # Tulis atomik (core.vault_io) = berkas .tmp di-rename ke .md; event "moved" membawa nama akhir di dest_path.
+        paths = [str(event.src_path), str(getattr(event, "dest_path", "") or "")]
+        md_paths = [p.replace("\\", "/") for p in paths if p.replace("\\", "/").endswith('.md')]
 
         # 1. Hanya pantau file markdown (.md)
-        if not src.endswith('.md'):
+        if not md_paths:
             return
+        src = md_paths[-1]
 
         # 2. FILTER LOOP: Abaikan file Master_Index.md dan folder 07-Settings
         # agar tidak terjadi infinite re-indexing loop saat AI membaca peta vault

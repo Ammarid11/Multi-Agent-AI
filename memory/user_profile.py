@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 import config
 
-PROFILE_FILE = os.path.join(config.DB_PATH, ".user_profile.json")
+PROFILE_FILE = config.state_file(".user_profile.json")
 
 
 def load_user_profile(user_name: str = "Pengguna") -> Dict[str, Any]:

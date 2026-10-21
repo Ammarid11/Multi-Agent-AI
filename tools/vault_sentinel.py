@@ -9,6 +9,7 @@ import re
 import glob
 from typing import Dict, List, Set
 import config
+from core import vault_io
 
 
 def audit_vault_health() -> str:
@@ -32,7 +33,7 @@ def audit_vault_health() -> str:
         fname_lower = os.path.basename(filepath).lower()
         all_physical_files.add(fname_lower)
         norm = filepath.replace("\\", "/").lower()
-        if "07-settings" in norm or fname_lower.startswith((".", "_")):
+        if "07-settings" in norm or fname_lower.startswith((".", "_")) or vault_io.is_blocked_path(filepath):
             continue
         if fname_lower.endswith(".md"):
             base = os.path.splitext(fname_lower)[0]
@@ -170,7 +171,7 @@ def heal_vault() -> str:
         fname_lower = os.path.basename(filepath).lower()
         all_physical_files.add(fname_lower)
         norm = filepath.replace("\\", "/").lower()
-        if "07-settings" in norm or fname_lower.startswith((".", "_")):
+        if "07-settings" in norm or fname_lower.startswith((".", "_")) or vault_io.is_blocked_path(filepath):
             continue
         if fname_lower.endswith(".md"):
             base = os.path.splitext(fname_lower)[0]
@@ -244,8 +245,7 @@ def heal_vault() -> str:
             elif "daily" in rel_folder: tag = "daily"
 
             new_c = f"---\ncreated: {created_str}\ntype: note\ntags:\n  - {tag}\n---\n\n" + c
-            with open(fpath, 'w', encoding='utf-8') as f:
-                f.write(new_c)
+            vault_io.atomic_write(fpath, new_c)
             healed_frontmatter_count += 1
         except Exception:
             pass
@@ -264,8 +264,7 @@ def heal_vault() -> str:
 
             if "[[Master Index" not in c:
                 c += f"\n\n## 🔗 Referensi Indeks\n- Terhubung ke [[Master Index - Brain AI Memory]]\n"
-                with open(fpath, 'w', encoding='utf-8') as f:
-                    f.write(c)
+                vault_io.atomic_write(fpath, c)
 
             master_links_to_add.append(f"- [[{note_title}]]")
             healed_orphan_count += 1
@@ -282,8 +281,7 @@ def heal_vault() -> str:
             for link in master_links_to_add:
                 if link not in mi_content:
                     mi_content += f"{link}\n"
-            with open(master_index_path, 'w', encoding='utf-8') as f:
-                f.write(mi_content)
+            vault_io.atomic_write(master_index_path, mi_content)
         except Exception:
             pass
 
@@ -321,8 +319,7 @@ def heal_vault() -> str:
 
             new_c = re.sub(r'(!?\[\[(.*?)\]\])', _clean_link, c)
             if new_c != c:
-                with open(fpath, 'w', encoding='utf-8') as f:
-                    f.write(new_c)
+                vault_io.atomic_write(fpath, new_c)
         except Exception:
             pass
 

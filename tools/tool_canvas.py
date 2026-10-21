@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import VAULT_PATH, MODEL_WRITER, OLLAMA_HOST
+from core import vault_io
 import requests
 
 
@@ -294,8 +295,7 @@ def generate_canvas(topic: str, folder_target: str = "01-Projects") -> Dict[str,
 
     # 4. Tulis ke disk
     try:
-        with open(canvas_file_path, "w", encoding="utf-8") as f:
-            json.dump(canvas_dict, f, indent=2, ensure_ascii=False)
+        vault_io.atomic_write(canvas_file_path, json.dumps(canvas_dict, indent=2, ensure_ascii=False))
 
         node_count = len(canvas_dict.get("nodes", []))
         edge_count = len(canvas_dict.get("edges", []))

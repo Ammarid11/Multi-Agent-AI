@@ -23,15 +23,18 @@ from memory.session_memory import (
 )
 from memory.user_profile import get_user_profile_context, update_profile_from_interaction
 from memory.rules_engine import get_rules_prompt_context, detect_and_register_rule
+from core.privacy import is_sensitive
 
 logger = logging.getLogger(__name__)
 
 
 class AITeam:
     """Orkestrator Tim Multi-Agent AI dengan Session Memory & Personalisasi Nama."""
-    def __init__(self, memory_manager, user_name: str = "Pengguna"):
+    def __init__(self, memory_manager, user_name: str = "Pengguna", persist_history: bool = True):
         self.memory = memory_manager
         self.user_name = user_name
+        # False untuk sesi perangkat remote: ringkasan/profil/aturan tidak ditulis ke disk bersama.
+        self.persist_history = persist_history
         self.chat_history: List[Dict[str, str]] = []
         self._pending_history_summary: Future[str] | None = None
         self._pending_summary_snapshot: List[Dict[str, str]] = []
@@ -41,7 +44,7 @@ class AITeam:
         
         # PERBAIKAN: Tambahkan pengaman try-except saat memuat ringkasan dari disk
         try:
-            self.session_summaries: List[str] = load_initial_session_summaries()
+            self.session_summaries: List[str] = load_initial_session_summaries() if persist_history else []
         except Exception:
             logger.exception("Gagal memuat ringkasan sesi awal dari disk. Menggunakan list kosong.")
             self.session_summaries = []
@@ -96,6 +99,7 @@ class AITeam:
                 self._pending_history_summary = submit_history_summary(
                     self._pending_summary_snapshot,
                     user_name=self.user_name,
+                    persist=self.persist_history,
                 )
             except Exception:
                 logger.exception("Gagal memicu ringkasan riwayat obrolan di background.")
@@ -105,7 +109,8 @@ class AITeam:
     def reset_session(self) -> str:
         """Kosongkan memori percakapan aktif untuk memulai topik baru."""
         self._finish_pending_history_summary()
-        clear_session_history()
+        if self.persist_history:
+            clear_session_history()
         self.chat_history = []
         self.session_summaries = []
         return "🧹 **Sesi baru dimulai!** Riwayat obrolan sebelumnya telah dibersihkan."
@@ -126,14 +131,17 @@ class AITeam:
 
     def _after_response(self, prompt: str, reply: str) -> None:
         """Catat ke chat_history secara aman, update profil adaptif, aturan prosedural, dan trigger summarize."""
+        if is_sensitive(prompt):
+            return
         try:
             with self._lock:
                 self.chat_history.append({'role': 'user', 'content': prompt})
                 self.chat_history.append({'role': 'assistant', 'content': reply})
 
             # Update minat & fokus pengguna serta aturan prosedural secara dinamis
-            update_profile_from_interaction(prompt, user_name=self.user_name)
-            detect_and_register_rule(prompt)
+            if self.persist_history:
+                update_profile_from_interaction(prompt, user_name=self.user_name)
+                detect_and_register_rule(prompt)
 
             # Rolling summary otomatis dengan nama user
             self._manage_history_after_response()
@@ -142,7 +150,7 @@ class AITeam:
 
     def record_untracked_response(self, prompt: str, reply: str) -> None:
         """Keep routed responses from handlers that do not manage conversational history safely."""
-        if not prompt or prompt.strip().casefold() in {"/new", "/reset", "/clear"}:
+        if not prompt or prompt.strip().casefold() in {"/new", "/reset", "/clear"} or is_sensitive(prompt):
             return
 
         try:

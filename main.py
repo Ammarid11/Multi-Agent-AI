@@ -4,6 +4,10 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.prompt import Prompt
 from rich.table import Table
+from rich.markup import escape
+
+import config
+from core.logging_setup import setup_logging
 
 from memory_indexer import MemoryManager
 from agents import AITeam, AgentRouter
@@ -82,6 +86,12 @@ def print_banner() -> None:
 
 
 def main() -> None:
+    # 0. Validasi konfigurasi & aktifkan logging berkas (terpisah dari konten percakapan)
+    setup_logging()
+    problems = config.validate_startup()
+    if problems:
+        console.print(Panel("\n".join(f"• {escape(p)}" for p in problems), title="⚠️ Masalah startup", border_style="red"))
+
     # 1. Setup Folder Vault
     setup_folders() 
     
@@ -102,7 +112,8 @@ def main() -> None:
         user_name = Prompt.ask("\n[bold yellow]👤 Siapa nama Anda?[/bold yellow]")
     user_name = user_name.strip()
 
-    console.print(f"[bold green]✨ Halo {user_name}! Carl dan tim Second Brain siap membantu Anda.[/bold green]")
+    safe_name = escape(user_name)
+    console.print(f"[bold green]✨ Halo {safe_name}! Carl dan tim Second Brain siap membantu Anda.[/bold green]")
 
     # 5. Inisialisasi Tim Agent & Router dengan Nama Pengguna
     ai_team = AITeam(memory_manager, user_name=user_name)
@@ -110,12 +121,10 @@ def main() -> None:
 
     try:
         while True:
-            user_input = Prompt.ask(f"\n[bold cyan]{user_name}[/bold cyan]")
+            user_input = Prompt.ask(f"\n[bold cyan]{safe_name}[/bold cyan]")
             
             if user_input.lower() in ['exit', 'quit']:
-                console.print(f"\n[bold red]👋 Sampai jumpa, {user_name}! Mematikan sistem AI Second Brain...[/bold red]")
-                observer.stop()
-                stop_background_scheduler()
+                console.print(f"\n[bold red]👋 Sampai jumpa, {safe_name}! Mematikan sistem AI Second Brain...[/bold red]")
                 break
                 
             if not user_input.strip():
@@ -134,10 +143,10 @@ def main() -> None:
                 
     except KeyboardInterrupt:
         console.print("\n[dim]Program dihentikan oleh pengguna.[/dim]")
+    finally:
         observer.stop()
         stop_background_scheduler()
-    
-    observer.join()
+        observer.join(timeout=5)
 
 
 if __name__ == "__main__":
