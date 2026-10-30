@@ -264,3 +264,18 @@ httpx.ConnectError: [WinError 10061] No connection could be made because the tar
 2026-10-22 06:33:09,011 INFO [dde4d8ee] agents.router: carl_stage component=router stage=agent_execution duration_ms=56548.59 intent=web
 2026-10-22 06:33:09,011 INFO [-] agents.router: carl_stage component=router stage=total duration_ms=58814.96 remote=False status=ok
 2026-10-22 06:33:09,011 INFO [-] api_server: carl_stage component=api stage=chat_job duration_ms=58815.05 queue_wait_ms=0.34 status=completed
+2026-10-22 06:38:15,608 WARNING [-] memory.vector_store: Qdrant path is locked by another process: E:/Project AI 2026/Multi-Agent AI/db/qdrantstorage
+2026-10-22 06:38:27,815 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:30,959 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:31,608 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:32,342 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:33,013 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:33,693 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:34,369 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:35,010 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:35,644 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:36,270 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:36,857 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:37,463 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:38,354 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
+2026-10-22 06:38:38,835 INFO [-] httpx: HTTP Request: POST http://localhost:11434/api/embed "HTTP/1.1 200 OK"
